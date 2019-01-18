@@ -1,4 +1,5 @@
-<a href="http://imba.io" target="_blank"><img width="80" src="http://imba.io/art/logo.svg"></a>
+<a href="http://imba.io" target="_blank">
+<img width="300" src="https://raw.githubusercontent.com/imba/brand/master/images/logo/png/logo-black.png"></a>
 
 # Imba
 
@@ -12,7 +13,7 @@ and rendering dom nodes.
 
 ## Documentation
 
-To get started with Imba, we recommend reading through the [official guide](http://imba.io/guides). If you just want to get going, clone [hello-world-imba](https://github.com/somebee/hello-world-imba) and follow the readme.
+To get started with Imba, we recommend reading through the [official guide](http://imba.io/guides). If you just want to get going, clone [hello-world-imba](https://github.com/somebee/hello-world-imba) and follow the readme. Check out the [awesome-imba](https://github.com/koolamusic/awesome-imba) list for more resources.
 
 ## Questions
 

@@ -2325,11 +2325,6 @@ Imba.createTagCache = function (owner){
 	var item = [];
 	item._tag = owner;
 	return item;
-	
-	var par = ((this.pref() != undefined) ? this.ctx()[this.pref()] : this.ctx()._tag);
-	var node = new TagMap(this.ctx(),this.ref(),par);
-	this.ctx()[this.ref()] = node;
-	return node;
 };
 
 Imba.createTagMap = function (ctx,ref,pref){
@@ -3456,7 +3451,6 @@ Imba.Event.prototype.bubble = function (v){
 
 Imba.Event.prototype.setBubble = function (v){
 	this._bubble = v;
-	return this;
 	return this;
 };
 
@@ -8132,7 +8126,8 @@ describe('Syntax - Tags',function() {
 		self.jseq("css('display','block')",function() { return (_1('div').css('display','block')).end(); });
 		self.jseq("setDisabled('disabled')",function() { return (_1('input').setDisabled('disabled')).end(); });
 		self.jseq("setDisabled('disabled').setReadonly('readonly')",function() { return (_1('input').setDisabled('disabled').setReadonly('readonly')).end(); });
-		return self.jseq(("set('model',strvar,\{number:1\})"),function() { return (_1('div')).set('model',strvar,{number:1}).end(); });
+		self.jseq(("set('model',strvar,\{number:1\})"),function() { return (_1('div')).set('model',strvar,{number:1}).end(); });
+		return self.jseq("set('aria-hidden','true')",function() { return (_1('div').set('aria-hidden','true')).end(); });
 	});
 	
 	
