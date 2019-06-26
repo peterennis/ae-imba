@@ -1077,14 +1077,16 @@ export class Block < ListNode
 			p "no loc for {opt[0]}" unless a
 			p "no loc for {opt[1]}" unless b
 
-			[a[0],b[1]]
-		elif var ind = @indentation
-			[ind.aloc,ind.bloc]
-		else
-			# first node
-			let a = @nodes[0]
-			let b = @nodes[@nodes:length - 1]
-			[a and a.loc[0] or 0,b and b.loc[1] or 0]
+			return [a[0],b[1]]
+
+		if var ind = @indentation
+			if ind.aloc != -1
+				return [ind.aloc,ind.bloc]
+
+		let a = @nodes[0]
+		let b = @nodes[@nodes:length - 1]
+
+		[a and a.loc[0] or 0,b and b.loc[1] or 0]
 
 	# go through children and unwrap inner nodes
 	def unwrap
@@ -2132,7 +2134,14 @@ export class ClassDeclaration < Code
 			path: name.c.toString
 			desc: @desc
 			loc: loc
+			symbols: @scope.entities
 		}
+		
+	def loc
+		if let d = option(:keyword)
+			[d.@loc,body.loc[1]]
+		else
+			super
 
 	def toJSON
 		metadata
@@ -2310,6 +2319,7 @@ export class TagDeclaration < Code
 			type: 'tag'
 			namepath: namepath
 			inherits: superclass ? "<{superclass.name}>" : null
+			symbols: @scope.entities
 			loc: loc
 			desc: @desc
 		}
@@ -2319,6 +2329,12 @@ export class TagDeclaration < Code
 			option('return',yes)
 			return self
 		super
+		
+	def loc
+		if let d = option(:keyword)
+			[d.@loc,body.loc[1]]
+		else
+			super
 
 	def initialize name, superclass, body
 		@traversed = no
@@ -2648,7 +2664,8 @@ export class MethodDeclaration < Func
 
 	def loc
 		if let d = option(:def)
-			[d.@loc,body.loc[1]]
+			let end = body.option(:end) or body.loc[1]
+			[d.@loc,end]
 		else
 			[0,0]
 
@@ -2662,7 +2679,12 @@ export class MethodDeclaration < Func
 		var name = String(name)
 		var sep = (option('static') ? '.' : '#')
 		if target
-			@namepath = @target.namepath + sep + name
+			let ctx = target
+			# console.log "target?? {@target.@parent} {@context.node}"
+			if ctx.namepath == "ValueNode"
+				ctx = @context.node
+
+			@namepath = ctx.namepath + sep + name
 		else
 			@namepath = '&' + name
 
@@ -2818,7 +2840,20 @@ export class PropertyDeclaration < Node
 
 	def visit
 		@options.traverse
+		scope__.entities.add(name,self)
+		# ROOT.entities.add(name,self)
 		self
+	
+	def toJSON
+		{
+			type: "prop"
+			name: "" + name
+			desc: @desc
+			loc: loc
+		}
+	
+	def loc
+		[@token.@loc,@name.region[1]]
 
 	# This will soon support bindings / listeners etc, much more
 	# advanced generated code based on options passed in.
@@ -5020,6 +5055,9 @@ export class Call < Node
 			return callee
 
 		return self
+		
+	def loc
+		@callee.loc
 
 	def visit
 		args.traverse
@@ -7491,6 +7529,30 @@ class Entities
 
 	def initialize root
 		@root = root
+		@map = []
+		return self
+
+	def add path, object
+		@map[path] = object
+		unless @map.indexOf(object) >= 0
+			@map.push(object)
+		self
+
+	# def register entity
+	# 	var path = entity.namepath
+	# 	@map[path] ||= entity
+	# 	self
+
+	def plain
+		JSON.parse(JSON.stringify(@map))
+
+	def toJSON
+		@map
+
+class RootEntities
+	
+	def initialize root
+		@root = root
 		@map = {}
 		return self
 
@@ -7508,7 +7570,7 @@ class Entities
 
 	def toJSON
 		@map
-
+	
 # SCOPES
 
 # handles local variables, self etc. Should create references to outer scopes
@@ -7530,6 +7592,7 @@ export class Scope
 	prop head
 	prop vars
 	prop counter
+	prop entities
 
 	def p
 		if STACK.loglevel > 0
@@ -7545,6 +7608,7 @@ export class Scope
 		@node = node
 		@parent = parent
 		@vars = VariableDeclaration.new([])
+		@entities = Entities.new(self)
 		@meta = {}
 		@annotations = []
 		@closure = self
@@ -7809,7 +7873,7 @@ export class RootScope < Scope
 		@scopes   = []
 		@helpers  = []
 		@selfless = no
-		@entities = Entities.new(self)
+		@entities = RootEntities.new(self)
 		@object = Obj.wrap({})
 		@head = [@vars]
 		
