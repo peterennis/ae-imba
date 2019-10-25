@@ -121,7 +121,7 @@ class CLI
 			var rel = root ? path.relative(root,abs) : file:filename
 			file:targetPath = path.resolve(o:output,rel)
 
-		elif !o:print and !o:stdio
+		elif !o:stdio
 			file:targetPath = file:sourcePath
 
 		if file:targetPath
@@ -249,6 +249,13 @@ class CLI
 		var srcp = o:stdio ? src:filename : path.relative(process.cwd,src:sourcePath)
 		var dstp = src:targetPath and path.relative(process.cwd,src:targetPath)
 
+		var srcpAbs = path.resolve(srcp)
+		var dstpAbs = path.resolve(dstp)
+
+		if srcp.indexOf("../") >= 0
+			srcp = srcpAbs
+			dstp = dstpAbs
+
 		try
 			out = compiler.compile(src:sourceBody,opts)
 		catch e
@@ -271,7 +278,7 @@ class CLI
 			let count = out:warnings:length
 			status += yellow(" [{count} warning{count > 1 ? 's' : ''}]")
 
-		if src:targetPath and out:js !== undefined
+		if src:targetPath and out:js !== undefined and !o:print
 			ensureDir(src:targetPath)
 			fs.writeFileSync(src:targetPath,out:js,'utf8')
 			log(status) unless o:print

@@ -1,3 +1,19 @@
+## master
+* Add support for declaring native getters and setters using `get/set` instead of `def` keyword
+* Add support for compiling props to native getters and setters using `native` option (`prop name native: yes`)
+* Make svg tags and non-svg tags use same class naming scheme (#230)
+
+## 1.4.8
+* Made splats compatible with ES6 containers like Set (#167)
+* Cache compilation for node runtime when 'IMBA_CACHE_DIR' process variable is set
+
+## 1.4.7
+* Make puppeteer tests work again
+* Fixed #203 (trigger data is null when supposed to be 0)
+
+## 1.4.6
+* Fix crash when packaging for webworker
+
 ## 1.4.4
 * Fix bugs in analyzer returning incorrect locations for classes and methods
 * Include properties in analyzer entity output

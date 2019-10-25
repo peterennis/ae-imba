@@ -697,8 +697,14 @@ export class Lexer
 		var m4 = match[4] # might be out of bounds? should rather check charAt
 		# drop match 4??
 
+		# if id == 'new' and !(ltyp == '.' and inTag)
+		# 	if ltyp == '.:'
+		# 		@last.@type = '.'
+		# 	token('NEW', id, length)
+		# 	return length
+
 		# should this not quit here in practically all cases?
-		unless (ltyp == '.' or ltyp == 'DEF') or (m4 == '!') or match[5]
+		unless (ltyp == '.' or (ltyp == 'DEF' or ltyp == 'GET' or ltyp == 'SET') ) or (m4 == '!') or match[5]
 			return 0
 
 		# again, why?
@@ -706,9 +712,9 @@ export class Lexer
 			return 0
 
 		if id == 'new'
-			# console.log 'NEW here?'
 			# this is wrong -- in the case of <div value=Date.new>
 			# we are basically in a nested scope until the next space or >
+
 			typ = 'NEW' unless ltyp == '.' and inTag
 
 		if id == '...' and [',','(','CALL_START','BLOCK_PARAM_START','PARAM_START'].indexOf(ltyp) >= 0
@@ -781,7 +787,7 @@ export class Lexer
 		return false
 
 	def isKeyword id
-		if (id == 'attr' or id == 'prop')
+		if (id == 'attr' or id == 'prop' or id == 'get' or id == 'set')
 			var scop = getScope
 			var incls = scop == 'CLASS' or scop == 'TAG' or scop == 'MODULE'
 			return true if incls
@@ -959,7 +965,8 @@ export class Lexer
 				self.pushEnd('TAG')
 			# FIXME @ends is not used the way it is supposed to..
 			# what we want is a context-stack
-			elif typ == 'DEF'
+			elif typ == 'DEF' or typ == 'GET' or typ == 'SET'
+				typ = 'DEF'
 				openDef
 
 			elif typ == 'DO'
@@ -1662,6 +1669,10 @@ export class Lexer
 		# if value is ',' and prev[0] is 'IDENTIFIER' and @tokens[@tokens:length - 2][0] in ['TERMINATOR','INDENT']
 		#   # token "TUPLE", "tuple" # should rather insert it somewhere else, no?
 		#   console.log("found comma")
+
+		# Breaking change that will make dot behave as in js
+		# if value == '.' and tokid == '.'
+		# 	tokid = '.:'
 
 		token(tokid, value, value:length)
 		return value:length

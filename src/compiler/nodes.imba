@@ -333,6 +333,10 @@ export class Stack
 		@counters[name] ||= 0
 		@counters[name] += 1
 
+	def decr name
+		@counters[name] ||= 0
+		@counters[name] -= 1
+
 	def stash
 		@stash
 
@@ -2669,6 +2673,11 @@ export class MethodDeclaration < Func
 		else
 			[0,0]
 
+	def isGetter
+		@type == 'get'
+
+	def isSetter
+		@type == 'set'
 
 	def toJSON
 		metadata
@@ -2689,6 +2698,8 @@ export class MethodDeclaration < Func
 			@namepath = '&' + name
 
 	def visit
+		@type = option(:def)?.@value or 'def'
+
 		@decorators = up?.collectDecorators
 		var o = @options
 		scope.visit
@@ -2787,7 +2798,12 @@ export class MethodDeclaration < Func
 			# add shorthand for prototype now
 
 		elif target
-			out = "{mark}{target.c}.{fname} = {funcKeyword} {func}"
+			if isGetter
+				out = "Object.defineProperty({target.c},'{fname}',\{get: {funcKeyword}{func}, configurable: true\})"
+			elif isSetter
+				out = "Object.defineProperty({target.c},'{fname}',\{set: {funcKeyword}{func}, configurable: true\})"
+			else
+				out = "{mark}{target.c}.{fname} = {funcKeyword} {func}"
 			if o:export
 				out = "exports.{o:default ? 'default' : fname} = {out}"
 		else
@@ -2826,6 +2842,30 @@ export class PropertyDeclaration < Node
 		if(v != a) { ${ondirty} }
 		return this;
 	}
+	${init}
+	'''
+
+	var propTemplateNext = '''
+	${headers}
+	Object.defineProperty(${path},\'${getter}\',{
+		configurable: true,
+		get: function(){ return ${get}; },
+		set: function(v){ ${set}; }
+	});
+	${init}
+	'''
+
+	var propWatchTemplateNext = '''
+	${headers}
+	Object.defineProperty(${path},\'${getter}\',{
+		configurable: true,
+		get: function(){ return ${get}; },
+		set: function(v){
+			var a = ${get};
+			if(v != a) { ${set}; }
+			if(v != a) { ${ondirty} }
+		}
+	});
 	${init}
 	'''
 
@@ -2952,6 +2992,13 @@ export class PropertyDeclaration < Node
 
 		if o.key(:chainable)
 			js:get = "v !== undefined ? (this.{js:setter}(v),this) : {js:get}"
+
+
+		if pars:native
+			if tpl == propWatchTemplate
+				tpl = propWatchTemplateNext
+			else
+				tpl = propTemplateNext
 
 
 		js:options = o.c
@@ -3512,7 +3559,8 @@ export class Op < Node
 			@op = '==='
 		elif @op == 'isnt'
 			@op = '!=='
-		
+		elif @op == 'not'
+			@op = '!'
 			
 		@left = l
 		@right = r
@@ -4009,6 +4057,7 @@ export class VarOrAccess < ValueNode
 
 		# really? what about just mimicking the two diffrent instead?
 		# Should we not return a call directly instead?
+		scope.root.@implicitAccessors.push(self)
 		@value = PropertyAccess.new(".",scope.context,value)
 		# mark the scope / context -- so we can show correct implicit
 		@token.@meta = {type: 'ACCESS'}
@@ -4871,6 +4920,8 @@ export class TagIdRef < Identifier
 
 # FIXME Rename to IvarLiteral? or simply Literal with type Ivar
 export class Ivar < Identifier
+	
+	var prefix = '_' # '_'
 
 	def initialize v
 		@value = v isa Identifier ? v.value : v
@@ -4881,14 +4932,15 @@ export class Ivar < Identifier
 		# value.c.camelCase.replace(/^@/,'')
 
 	def alias
-		'_' + name
+		prefix + name
 
 	# the @ should possibly be gone from the start?
 	def js o
-		'_' + name
+		return name
+		prefix + name
 
 	def c
-		'_' + helpers.dashToCamelCase(@value).slice(1) # .replace(/^@/,'') # AST.mark(@value) +
+		prefix + name # helpers.dashToCamelCase(@value).slice(1) # .replace(/^@/,'') # AST.mark(@value) +
 
 export class Decorator < ValueNode
 	
@@ -4896,17 +4948,8 @@ export class Decorator < ValueNode
 		@call.traverse if @call
 
 		if let block = up
-			# console.log "visited decorator!!",block
-			# add decorator to this scope -- let method empty it
 			block.@decorators ||= []
 			block.@decorators.push(self)
-			# let idx = block.indexOf(self) + 1
-			# idx += 1 if block.index(idx) isa Terminator
-			# if var next = block.index(idx)
-			#	next.@desc = self
-		
-		
-
 
 # Ambiguous - We need to be consistent about Const vs ConstAccess
 # Becomes more important when we implement typeinference and code-analysis
@@ -6019,7 +6062,7 @@ export class Splat < ValueNode
 	def js o
 		var par = stack.parent
 		if par isa ArgList or par isa Arr
-			"[].slice.call({value.c})"
+			"Array.from({value.c})"
 		else
 			p "what is the parent? {par}"
 			"SPLAT"
@@ -6437,11 +6480,15 @@ export class Tag < Node
 		!o:hasConditionals and !o:hasLoops and !o:ivar and !o:key
 
 	def visit stack
+
 		var o = @options
 		var scope = @tagScope = scope__
 		let prevTag = o:par = stack.@tag
 		let po = prevTag and prevTag.@options
 		var typ = enclosing
+
+		@level = stack.@nodes.filter(|el| el isa Tag):length
+		@tempvar = scope.closure.temporary(self,{reuse: yes},"_t{@level}")
 		
 		if o:par
 			o:optim = po:optim
@@ -6768,6 +6815,8 @@ export class Tag < Node
 				if (commits.len and o:optim) or !isNative or hasAttrs or o:template
 					calls.push ".{isSelf ? "synced" : "end"}({args})"
 		
+
+		let tvar = @tempvar.c
 		if @reference and !isSelf
 			out = "{reference.c} = {pre}({reference.c}={ctor})"
 		else
@@ -6775,11 +6824,17 @@ export class Tag < Node
 			
 		if statics:length
 			out = out + statics.join("")
+			# To drop chaining params
+			# out = "({tvar} = {out},{tvar}{statics.join(",{tvar}")},{tvar})"
 		
 		if calls != statics
 			if o:optim and o:optim != self
-				set(commit: "{o:path}{calls.join("")}") if calls:length and o:commit == undefined
+				let commit = "{o:path}{calls.join("")}"
+				# let commit = "({tvar}={o:path},{tvar}{calls.join(",{tvar}")},{tvar})"
+				
+				set(commit: commit) if calls:length and o:commit == undefined
 			else
+				# out = "({out},{tvar}{calls.join(",{tvar}")},{tvar})"
 				out = "({out})" + calls.join("")
 		
 		if @typeNum
@@ -7731,6 +7786,8 @@ export class Scope
 	# we only need a temporary thing with defaults -- that is all
 	# change these values, no?
 	def temporary decl, o = {}, name = null
+		if name and o:reuse and @vars["_temp_{name}"]
+			return @vars["_temp_{name}"]
 
 		if o:pool
 			for v in @varpool
@@ -7741,6 +7798,8 @@ export class Scope
 		
 		@varpool.push(item) # It should not be in the pool unless explicitly put there?
 		@vars.push(item) # WARN variables should not go directly into a declaration-list
+		if name and o:reuse
+			@vars["_temp_{name}"] = item
 		return item
 
 	def lookup name
@@ -7873,6 +7932,7 @@ export class RootScope < Scope
 		@scopes   = []
 		@helpers  = []
 		@selfless = no
+		@implicitAccessors = []
 		@entities = RootEntities.new(self)
 		@object = Obj.wrap({})
 		@head = [@vars]
@@ -7907,7 +7967,10 @@ export class RootScope < Scope
 		self
 
 	def dump
-		var obj = {warnings: AST.dump(@warnings)}
+		var obj = {
+			warnings: AST.dump(@warnings)
+			autoself: @implicitAccessors.map(|s| s.dump)
+		}
 
 		if OPTS:analysis:scopes
 			var scopes = @scopes.map(|s| s.dump)
