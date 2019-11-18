@@ -1,7 +1,12 @@
 ## master
+
+* Fixed #237 (CSS comments not working in SFC)
+
+## 1.5.0
 * Add support for declaring native getters and setters using `get/set` instead of `def` keyword
 * Add support for compiling props to native getters and setters using `native` option (`prop name native: yes`)
 * Make svg tags and non-svg tags use same class naming scheme (#230)
+* Add experimental support for single-file-components
 
 ## 1.4.8
 * Made splats compatible with ES6 containers like Set (#167)
@@ -19,7 +24,7 @@
 * Include properties in analyzer entity output
 
 ## 1.4.3
-* Support for ** and **= operators (#192 by @taw)
+* Support for `**` and `**=` operators (#192 by @taw)
 * Fix imbapack crash with newer webpack (#194 by @gdamjan)
 * Fix --stdio/-s option for imbac (#178 by @shreeve)
 * Make special variables in event handlers default to event methods

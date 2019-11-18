@@ -3,6 +3,7 @@
 
 var helpers = require './helpers'
 var constants = require './constants'
+var csscompiler = require './css'
 var NODE_MAJOR_VERSION = null
 
 import ImbaParseError from './errors'
@@ -776,6 +777,20 @@ export class Meta < ValueNode
 export class Comment < Meta
 
 	def visit
+		if @value.type == 'HERECOMMENT'
+			
+			let raw = @value.@value
+			let line = raw.slice(0,raw.indexOf('\n')).trim
+
+			if let m = line.match(/^(css|less|stylus|sass|scss)( scoped)?/)
+				var style = {
+					content: raw.slice(raw.indexOf('\n'))
+					scoped: !!m[2]
+					type: m[1]
+					attrs: {}
+				}
+				scope__.root.styles.push(style)
+
 		if var block = up
 			var idx = block.indexOf(self) + 1
 			idx += 1 if block.index(idx) isa Terminator
@@ -794,7 +809,8 @@ export class Comment < Meta
 		return "" if STACK.option(:comments) == false
 		var v = @value.@value
 		if o and o:expression or v.match(/\n/) or @value.type == 'HERECOMMENT' # multiline?
-			"/*{v}*/"
+			var out = v.replace(/\*\//g, '\\*\\/').replace(/\/\*/g, '\\/\\*')
+			"/*{out}*/"
 		else
 			"// {v}"
 
@@ -2064,7 +2080,25 @@ export class Root < Code
 			warnings: scope.warnings,
 			options: o,
 			toString: (do this:js)
+			styles: scope.styles
 		}
+
+		result:fileScopeId = o:sourcePath and helpers.identifierForPath(o:sourcePath)
+
+		var stylebody = ""
+		for style in result:styles
+			if style:type == 'css'
+				let scoping = style:scoped ? '_' + result:fileScopeId : null
+				style:processed = csscompiler.compile(style:content,scope: scoping)
+				stylebody += style:processed + '\n'
+
+		if stylebody and (o:inline-css or (!STACK.env('WEBPACK') && o:target == 'web'))
+			result:js = """
+			var styles = document.createElement('style');
+			styles.textContent = {JSON.stringify(stylebody)};
+			document.head.appendChild(styles);\n""" + out
+			result:js = result:js.replace(/\/\*SCOPEID\*\//g,'"' + result:fileScopeId + '"')
+
 		if o:sourceMapInline or o:sourceMap
 			result:sourcemap = SourceMap.new(result).generate
 
@@ -2384,7 +2418,9 @@ export class TagDeclaration < Code
 			params.push("function({@ctx.c})\{{cbody}\}")
 
 		var meth = option(:extension) ? 'extendTag' : 'defineTag'
-		var js = "{mark}{scope__.imba.c}.{meth}({params.join(', ')})"
+		# var js = "{mark}{scope__.imba.c}.{meth}({params.join(', ')})"
+		var caller = scope__.imbaRef('tagscope') # scope__.imba.c
+		var js = "{mark}{caller}.{meth}({params.join(', ')})"
 
 		if name.isClass
 			let cname = name.name
@@ -6567,8 +6603,8 @@ export class Tag < Node
 	def reference
 		@reference ||= @tagScope.closure.temporary(self,pool: 'tag').resolve
 	
-	def factory
-		scope__.imbaRef('createElement')
+	def tagfactory
+		scope__.imbaRef('createElementFactory(/*SCOPEID*/)')
 	
 	# reference to the cache-object this tag will try to register with
 	def cacher
@@ -6717,7 +6753,7 @@ export class Tag < Node
 				elif o:ivar or (o:key and !o:loop)
 					pars.push(scope.context.c)
 
-			ctor = "{factory.c}({pars.join(',')})"
+			ctor = "{tagfactory.c}({pars.join(',')})"
 
 		if o:body isa Func
 			bodySetter = "setTemplate"
@@ -7901,6 +7937,7 @@ export class RootScope < Scope
 	prop scopes
 	prop entities
 	prop object
+	prop styles
 
 	def initialize
 		super
@@ -7931,6 +7968,7 @@ export class RootScope < Scope
 		@warnings = []
 		@scopes   = []
 		@helpers  = []
+		@styles = []
 		@selfless = no
 		@implicitAccessors = []
 		@entities = RootEntities.new(self)
@@ -8010,6 +8048,11 @@ export class RootScope < Scope
 			@imbaTags = "{imbaRef.c}.TAGS"
 			
 	def imbaRef name, shorthand = '_'
+		if name == 'tagscope'
+			name = 'createTagScope(/*SCOPEID*/)'
+		elif name == 'tagfactory'
+			name = 'createElementFactory(/*SCOPEID*/)'
+
 		var map = @imbaRefs ||= {}
 		return map[name] if map[name]
 
