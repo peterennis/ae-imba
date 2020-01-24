@@ -10,69 +10,39 @@ import ImbaParseError from './errors'
 import Token from './token'
 import SourceMap from './sourcemap'
 
-var HTML_TAGS = "a abbr address area article aside audio b base bdi bdo big blockquote body br button canvas caption cite code col colgroup data datalist dd del details dfn div dl dt em embed fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 head header hr html i iframe img input ins kbd keygen label legend li link main map mark menu menuitem meta meter nav noscript object ol optgroup option output p param pre progress q rp rt ruby s samp script section select small source span strong style sub summary sup table tbody td textarea tfoot th thead time title tr track u ul var video wbr".split(" ")
-var HTML_TAGS_UNSAFE = "article aside header section".split(" ")
+var TAG_NAMES = constants.TAG_NAMES
 
-# var SVG_TAGS = "svg g rect circle line polygon path".split(" ")
-var SVG_TAGS = " a animate animateMotion animateTransform circle clipPath color-profile defs desc discard ellipse feBlend feColorMatrix feComponentTransfer feComposite feConvolveMatrix feDiffuseLighting feDisplacementMap feDistantLight feDropShadow feFlood feFuncA feFuncB feFuncG feFuncR feGaussianBlur feImage feMerge feMergeNode feMorphology feOffset fePointLight feSpecularLighting feSpotLight feTile feTurbulence filter foreignObject g hatch hatchpath image line linearGradient marker mask mesh meshgradient meshpatch meshrow metadata mpath path pattern polygon polyline radialGradient rect script set solidcolor stop style svg switch symbol text textPath title tspan unknown use view".split(" ")
+var TAG_TYPES = {}
+var TAG_ATTRS = {}
 
-var HTML_ATTRS =
-	a: "href target hreflang media download rel type ping referrerpolicy"
-	audio: "autoplay controls crossorigin loop muted preload src"
-	area: "alt coords download href hreflang ping referrerpolicy rel shape target"
-	base: "href target"
-	video: "autoplay buffered controls crossorigin height loop muted preload poster src width playsinline"
-	fieldset: "disabled form name"
-	form: "method action enctype autocomplete target"
-	button: "autofocus type form formaction formenctype formmethod formnovalidate formtarget value name"
-	embed: "height src type width"
-	input: "accept disabled form list max maxlength min minlength pattern required size step type"
-	label: "accesskey for form"
-	img: "alt src srcset crossorigin decoding height importance intrinsicsize ismap referrerpolicy sizes width usemap"
-	link: "rel type href media"
-	iframe: "allow allowfullscreen allowpaymentrequest height importance name referrerpolicy sandbox src srcdoc width frameborder align longdesc scrolling"
-	meta: "property content charset desc http-equiv color-scheme name scheme"
-	map: "name"
-	optgroup: "label"
-	option: "label"
-	output: "for form"
-	object: "type data width height"
-	param: "name type value valuetype"
-	progress: "max"
-	script: "src type async defer crossorigin integrity nonce language nomodule"
-	select: "size form multiple"
-	source: "sizes src srcset type media"
-	textarea: "rows cols minlength maxlength form wrap"
-	track: "default kind label src srclang"
-	td: "colspan rowspan headers"
-	th: "colspan rowspan"
+TAG_TYPES.HTML = "a abbr address area article aside audio b base bdi bdo big blockquote body br
+ button canvas caption cite code col colgroup data datalist dd del details dfn
+ div dl dt em embed fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6
+ head header hr html i iframe img input ins kbd keygen label legend li link
+ main map mark menu menuitem meta meter nav noscript object ol optgroup option
+ output p param pre progress q rp rt ruby s samp script section select small
+ source span strong style sub summary sup table tbody td textarea tfoot th
+ thead time title tr track u ul var video wbr".split(" ")
 
-var HTML_PROPS =
-	input: "autofocus autocomplete autocapitalize autocorrect value placeholder required disabled multiple checked readOnly spellcheck"
-	textarea: "autofocus autocomplete autocapitalize autocorrect value placeholder required disabled multiple checked readOnly spellcheck"
-	form: "novalidate"
-	fieldset: "disabled"
-	button: "disabled"
-	select: "autofocus disabled required readOnly multiple"
-	option: "disabled selected value"
-	optgroup: "disabled"
-	progress: "value"
-	fieldset: "disabled"
-	canvas: "width height"
+TAG_TYPES.SVG = "circle defs ellipse g line linearGradient mask path pattern polygon polyline
+radialGradient rect stop svg text tspan".split(" ")
 
-var HTML_CONSTRUCTORS =
-	a: 'HTMLAnchorElement'
-	p: 'HTMLParagraphElement'
-	p: 'HTMLParagraphElement'
-	h1: 'HTMLParagraphElement'
-	h2: 'HTMLParagraphElement'
-	h3: 'HTMLHeadingElement'
-	h4: 'HTMLHeadingElement'
-	h5: 'HTMLHeadingElement'
-	h6: 'HTMLHeadingElement'
-	input: 'HTMLInputElement'
-	form: 'HTMLFormElement'
-	label: 'HTMLLabelElement'
+TAG_ATTRS.HTML = "accept accessKey action allowFullScreen allowTransparency alt async
+ autoComplete autoFocus autoPlay cellPadding cellSpacing charSet checked
+ className cols colSpan content contentEditable contextMenu controls coords
+ crossOrigin data dateTime defer dir disabled download draggable encType form
+ formNoValidate frameBorder height hidden href hrefLang htmlFor httpEquiv icon
+ id label lang list loop max maxLength mediaGroup method min multiple muted
+ name noValidate pattern placeholder poster preload radioGroup readOnly rel
+ required role rows rowSpan sandbox scope scrollLeft scrolling scrollTop
+ seamless selected shape size span spellCheck src srcDoc srcSet start step
+ style tabIndex target title type useMap value width wmode"
+
+TAG_ATTRS.SVG = "cx cy d dx dy fill fillOpacity fontFamily fontSize fx fy gradientTransform
+ gradientUnits markerEnd markerMid markerStart offset opacity
+ patternContentUnits patternUnits points preserveAspectRatio r rx ry
+ spreadMethod stopColor stopOpacity stroke strokeDasharray strokeLinecap
+ strokeOpacity strokeWidth textAnchor transform version viewBox x1 x2 x y1 y2 y"
 
 var CUSTOM_EVENTS = {
 	intersect: yes
@@ -90,10 +60,11 @@ var TREE_TYPE =
 
 export var F = 
 	TAG_INITED: 2 ** 0 
-	TAG_CUSTOM: 2 ** 2
+	TAG_BUILT: 2 ** 1 # available
+	TAG_CUSTOM: 2 ** 2 # available
 	TAG_AWAKENED: 2 ** 3
 	TAG_MOUNTED: 2 ** 4
-	TAG_SCHEDULE: 2 ** 5
+	TAG_SCHEDULE: 2 ** 5 # available
 	TAG_SCHEDULED: 2 ** 6
 	TAG_FIRST_CHILD: 2 ** 7
 	TAG_LAST_CHILD: 2 ** 8
@@ -103,8 +74,8 @@ export var F =
 	TAG_HAS_DYNAMIC_CHILDREN: 2 ** 12
 	TAG_IN_BRANCH: 2 ** 13
 	TAG_BIND_MODEL: 2 ** 14
-	TAG_INDEXED: 2 ** 15
-	TAG_KEYED: 2 ** 16
+	TAG_INDEXED: 2 ** 15 # not used
+	TAG_KEYED: 2 ** 16 # not used
 
 	# render marks
 	DIFF_BUILT: 2 ** 0
@@ -558,6 +529,7 @@ export class Stack
 		@es5 = null
 		@optlevel = null
 		@tag = null
+		@sfcid = null
 		self
 
 	def incr name
@@ -2549,6 +2521,10 @@ export class Root < Code
 		STACK.root = @scope
 
 		var out = c
+
+		if STACK.tsc
+			out = "import 'imba/index';\n{out}"
+
 		var result = {
 			js: out,
 			ast: self,
@@ -2693,8 +2669,8 @@ export class ClassDeclaration < Code
 		scope.visit
 
 		if @superclass and !option(:extension) and !STACK.tsc
-			addMethod('super$',[LIT('k')],'super[k]')
-			addMethod('super$set',[LIT('k,v')],'super[k] = v')
+			# addMethod('super$',[LIT('k')],'super[k]')
+			# addMethod('super$set',[LIT('k,v')],'super[k] = v')
 			staticInit
 
 		body.traverse
@@ -2705,9 +2681,6 @@ export class ClassDeclaration < Code
 		var inits = InstanceInitBlock.new()
 		var staticInits = ClassInitBlock.new()
 		var ctor = body.option(:ctor)
-
-		if isTag
-			ctor = instanceInit
 
 		for node in body when node isa ClassField
 			staticInits.add(node)
@@ -2723,6 +2696,7 @@ export class ClassDeclaration < Code
 
 		if !inits.isEmpty
 			if isTag
+				ctor = instanceInit
 				ctor.inject(inits)
 
 			elif ctor
@@ -2839,16 +2813,19 @@ export class TagDeclaration < ClassDeclaration
 			instanceInit.inject LIT("this.setAttribute('data-{@scope.root.sfcid}','')")
 
 		# should probably also warn about stuff etc
-		let sup = CALL(LIT('imba.tags.get'),[superclass or LIT('')])
+		let sup = CALL(LIT('imba.tags.get'),[
+			superclass or STR('component'),
+			superclass ? STR(superclass.toClassName) : STR('ImbaElement')
+		])
 
 		if STACK.tsc
-			sup = superclass ? superclass.toClassName : LIT('HTMLElement')
+			sup = superclass ? superclass.toClassName : LIT('ImbaElement')
 
 		if option(:extension)
 			# TODO remove support - throw when trying to extend
 			@body.@delimiter = ','
 			@body.set(braces: yes)
-			let cls = CALL(LIT('imba.tags.get'),[name])
+			let cls = CALL(LIT('imba.tags.get'),[name,STR(name.toClassName)])
 			let tagname = TagTypeIdentifier.new(name)
 			return util.extend(cls,body).c
 
@@ -2857,11 +2834,6 @@ export class TagDeclaration < ClassDeclaration
 		let jsbody = '{' + body.c() + '}'
 		let jshead = "{M 'class', keyword} {M className, name} extends {M sup, superclass}"
 
-		if STACK.tsc
-			# jshead = "const {M(className,@name)} = globalThis.{M(className,@name)} = {jshead}"
-			yes
-
-
 		let js = "{jshead} {jsbody}"
 
 		if !STACK.tsc
@@ -2869,6 +2841,8 @@ export class TagDeclaration < ClassDeclaration
 				js += "; {className}.init$()"
 			let ext = (option(:extends) or LIT('{}')).c
 			js += "; imba.tags.define({name.c},{className},{ext})"
+		else
+			js += "; globalThis.{M className, name} = {className}"
 		return js
 
 export class Func < Code
@@ -4243,11 +4217,6 @@ export class LocalVarAccess < Access
 		variable.@alias or super()
 
 
-export class GlobalVarAccess < ValueNode
-
-	def c
-		value.c
-
 
 export class PropertyAccess < Access
 
@@ -4370,11 +4339,10 @@ export class VarOrAccess < ValueNode
 
 			# FIX
 			# @value.safechain = safechain
-		@value = GlobalVarAccess.new(value)
 		return self
 
 	def c
-		@variable ? super() : value.c
+		@variable ? super() : M(@token.value,@token)
 		# M((@variable ? super() : value.c), @token)
 
 	def js o
@@ -5037,9 +5005,9 @@ export class TagTypeIdentifier < Identifier
 
 	def nativeCreateNode
 		if isSVG
-			CALL(LIT('document.createElementNS'),[STR("http://www.w3.org/2000/svg"),STR(name)])
+			CALL(LIT('imba.document.createElementNS'),[STR("http://www.w3.org/2000/svg"),STR(name)])
 		else
-			CALL(LIT('document.createElement'),[STR(name)])
+			CALL(LIT('imba.document.createElement'),[STR(name)])
 			# LIT('document.createElementNS("http://www.w3.org/2000/svg",name)'
 
 	def isClass
@@ -5053,6 +5021,9 @@ export class TagTypeIdentifier < Identifier
 
 	def isSVG
 		@ns == 'svg' or (!isNative and !@ns and TAG_TYPES.SVG.indexOf(@str) >= 0)
+
+	def isCustom
+		!isNative and !isNativeSVG
 	
 	def isSimpleNative
 		isNative and !(/input|textarea|select|form|iframe/).test(@str)
@@ -5061,26 +5032,23 @@ export class TagTypeIdentifier < Identifier
 		LIT(@str)
 
 	def toClassName
-		if isNative
-			return HTML_CONSTRUCTORS[@str] or 'HTMLElement'
-		elif isNativeSVG
-			return 'SVG' + helpers.pascalCase(@str + '-element')
-		elif @str == 'fragment'
+		let str = @str
+		if str == 'element'
+			return 'Element'
+		elif str == 'svg:element'
+			return 'SVGElement'
+		elif str == 'htmlelement'
+			return 'HTMLElement'
+		elif str == 'fragment'
+			return 'DocumentFragment'
+
+		let match = TAG_NAMES[isSVG ? "svg_{@name}" : @name]
+		return match:name if match
+			
+		if @str == 'fragment'
 			return 'DocumentFragment'
 		else
 			return helpers.pascalCase(@str + '-component')
-
-	def toNativeClass
-		let name = @str
-		let prefix = (isSVG ? 'SVG' : 'HTML')
-		prefix + helpers.pascalCase(name+'-element')
-
-	def spawner
-		console.log "TagTypeIdentifier shuold never be used"
-		if @ns
-			"_{@ns.toUpperCase}.{@name.replace(/-/g,'_').toUpperCase}"
-		else
-			"{@name.replace(/-/g,'_').toUpperCase}"
 
 	def id
 		var m = @str.match(/\#([\w\-\d\_]+)\b/)
@@ -5395,9 +5363,6 @@ export class If < ControlFlow
 		test.traverse if test
 		
 		@tag = stack.@tag
-		
-		if @tag
-			@tag.set(hasConditionals: yes)
 
 		# console.log "vars in if",Object.keys(@scope.varmap)
 		for own name, variable of @scope.varmap
@@ -5412,7 +5377,10 @@ export class If < ControlFlow
 			@pretest = AST.truthy(test)
 
 			if @pretest === true
+				# only collapse if condition includes compiletime flags?
 				alt = @alt = null
+				if test isa EnvFlag
+					@preunwrap = true
 
 			elif @pretest === false
 				loc # cache location before removing body
@@ -5437,7 +5405,7 @@ export class If < ControlFlow
 		# would possibly want to look up / out
 		var brace = braces: yes, indent: yes
 
-		if @pretest === true and false
+		if @pretest === true and @preunwrap
 			# what if it is inside expression?
 			let js = body ? body.c(braces: !!prevIf) : 'true'
 
@@ -6182,47 +6150,6 @@ export class Splat < ValueNode
 
 # TAGS
 
-var TAG_TYPES = {}
-var TAG_ATTRS = {}
-
-TAG_TYPES.HTML = "a abbr address area article aside audio b base bdi bdo big blockquote body br
- button canvas caption cite code col colgroup data datalist dd del details dfn
- div dl dt em embed fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6
- head header hr html i iframe img input ins kbd keygen label legend li link
- main map mark menu menuitem meta meter nav noscript object ol optgroup option
- output p param pre progress q rp rt ruby s samp script section select small
- source span strong style sub summary sup table tbody td textarea tfoot th
- thead time title tr track u ul var video wbr".split(" ")
- 
-TAG_TYPES.HTML_OPT = "abbr address area article aside audio b base bdi bdo big blockquote body br
- button canvas caption cite code col colgroup dd del details dfn
- div dl dt em embed fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6
- head header hr html i img ins kbd keygen label legend li link
- main mark meta meter nav noscript object ol optgroup option
- output p param pre q rp rt ruby s samp script section small
- source span strong style sub summary sup table tbody td tfoot th
- thead time title tr track u ul wbr".split(" ")
-
-TAG_TYPES.SVG = "circle defs ellipse g line linearGradient mask path pattern polygon polyline
-radialGradient rect stop svg text tspan".split(" ")
-
-TAG_ATTRS.HTML = "accept accessKey action allowFullScreen allowTransparency alt async
- autoComplete autoFocus autoPlay cellPadding cellSpacing charSet checked
- className cols colSpan content contentEditable contextMenu controls coords
- crossOrigin data dateTime defer dir disabled download draggable encType form
- formNoValidate frameBorder height hidden href hrefLang htmlFor httpEquiv icon
- id label lang list loop max maxLength mediaGroup method min multiple muted
- name noValidate pattern placeholder poster preload radioGroup readOnly rel
- required role rows rowSpan sandbox scope scrollLeft scrolling scrollTop
- seamless selected shape size span spellCheck src srcDoc srcSet start step
- style tabIndex target title type useMap value width wmode"
-
-TAG_ATTRS.SVG = "cx cy d dx dy fill fillOpacity fontFamily fontSize fx fy gradientTransform
- gradientUnits markerEnd markerMid markerStart offset opacity
- patternContentUnits patternUnits points preserveAspectRatio r rx ry
- spreadMethod stopColor stopOpacity stroke strokeDasharray strokeLinecap
- strokeOpacity strokeWidth textAnchor transform version viewBox x1 x2 x y1 y2 y"
-
 
 export class IdentifierExpression < Node
 
@@ -6453,10 +6380,10 @@ export class TagAttr < TagPart
 			elif path isa Array
 				bval = "[{val[0].c(o)},{val[1].c(o)}]"
 
-			"bind$('{key}',{modifiers.c},{bval})"
+			"bind$('{key}',{bval})"
 		elif key.indexOf("aria-") == 0 or (@tag and @tag.isSVG) or key == 'for'
 			# how do we remove attribute then?
-			"setAttribute('{key}',{val})"
+			"set$('{key}',{val})"
 		elif key.indexOf("data-") == 0
 			"dataset.{key.slice(5)}{op}{val}"
 		elif key.indexOf('--') == 0
@@ -6548,13 +6475,17 @@ export class TagModifier < TagPart
 	def visit
 		@params.traverse if @params
 		# TODO support evaluated paths?
-		for param in @params when param isa VarOrAccess
-			if param.value isa GlobalVarAccess
-				# what about nested path here?
-				let sym = param.value.c
+		for param in @params
+			if param isa VarOrAccess
+				let sym = param.@token.value
 				if sym and sym[0] == '$'
 					let special = TagHandlerSpecialArg.new(sym.slice(1))
 					@params.swap(param,special)
+			elif param isa PropertyAccess
+				let out = helpers.clearLocationMarkers(param.js())
+				if out[0] == '$'
+					@params.swap(param,TagHandlerSpecialArg.new(out.slice(1)))
+
 		self
 		
 	def js
@@ -6647,7 +6578,6 @@ export class TagHandler < TagPart
 		super
 
 		if @name and CUSTOM_EVENTS[String(@name)]
-			console.log "depending on selection event!!"
 			scope__.imbaDependency('events/' + String(@name))
 
 	def isStatic
@@ -6742,10 +6672,10 @@ class TagLike < Node
 		hasFlag(F.TAG_LAST_CHILD)
 
 	def isIndexed
-		hasFlag(F.TAG_INDEXED)
+		option(:indexed)
 
-	def isCustom
-		hasFlag(F.TAG_CUSTOM)
+	def isComponent
+		option(:custom)
 
 	def hasLoops
 		hasFlag(F.TAG_HAS_LOOPS)
@@ -6957,16 +6887,18 @@ export class TagBranchFragment < TagLike
 export class TagLoopFragment < TagLike
 
 	def isKeyed
-		hasFlag(F.TAG_KEYED) or hasFlag(F.TAG_HAS_BRANCHES)
+		option(:keyed) or hasFlag(F.TAG_HAS_BRANCHES)
 
 	def consumeChildren
 		super
 
 		# determine if the order of elements will ever change inside loop
 		if @consumed.every(do $1 isa Tag and !$1.option(:key) and !$1.isDynamicType) and !hasFlag(F.TAG_HAS_BRANCHES)
-			flag(F.TAG_INDEXED)
+			set(indexed: yes)
+			# flag(F.TAG_INDEXED)
 		else
-			flag(F.TAG_KEYED)
+			set(keyed: yes)
+			# flag(F.TAG_KEYED)
 
 	def cvar
 		@cvar || tagvar('c')
@@ -6975,7 +6907,7 @@ export class TagLoopFragment < TagLike
 		if stack.isExpression
 			return CALL(FN([],[self]),[]).c
 		# if @tag and @childTags
-		let iref = LIT('imba.createFragment')
+		let iref = option(:indexed) ? LIT('imba.createIndexedFragment') : LIT('imba.createKeyedFragment')
 		# should know how many inner slots this fragment has?
 		let cache = parent.cvar
 		let parentRef = parent isa TagBranchFragment ? LIT('null') : fragment.tvar
@@ -6994,6 +6926,9 @@ export class TagIndexedFragment < TagLike
 export class TagKeyedFragment < TagLike
 
 export class TagSlotProxy < TagLike
+
+	def ref
+		tvar
 
 	def tagvarprefix
 		oid+'S'
@@ -7018,8 +6953,8 @@ export class Tag < TagLike
 		@options:type && @options:type.traverse
 
 		# Need to potentially resolve tagname to variables first?
-		if isSelf or (tagName.indexOf('-') >= 0) or isDynamicType
-			flag(F.TAG_CUSTOM)
+		if isSelf or (tagName.indexOf('-') >= 0) or isDynamicType or (@type?.isCustom)
+			@options:custom = yes
 
 		if attrs:length == 0 && !@options:type
 			@options:type = 'fragment'
@@ -7055,7 +6990,7 @@ export class Tag < TagLike
 	def register node
 		node = super(node)
 
-		if node isa TagLike and (isCustom and !isSelf)
+		if node isa TagLike and (isComponent and !isSelf)
 			let slotKey = node isa Tag ? node.@attrmap:slot : null
 			let name = '__'
 			if slotKey
@@ -7161,6 +7096,8 @@ export class Tag < TagLike
 	def create_
 		if isFragment or isSlot
 			LIT('imba.createLiveFragment')
+		elif isComponent
+			LIT('imba.createComponent')
 		elif isSVG
 			LIT('imba.createSVGElement')
 		else
@@ -7197,8 +7134,9 @@ export class Tag < TagLike
 		var isReactive = self.isReactive
 
 		var canInline = no
-		var shouldEnd = hasFlag(F.TAG_CUSTOM)
+		var shouldEnd = isComponent or @attrmap:route or @attrmap:routeTo
 		var dynamicKey = null
+		var ownCache = no
 		var slotPath = isSlot ? "{fragment.root.tvar}.__slots.{option(:name)}" : ""
 
 		if STACK.tsc
@@ -7247,8 +7185,10 @@ export class Tag < TagLike
 			params[4] = nodes[0].value.c
 			nodes = []
 
+		# checking to see if a node is static enough to be inserted directly into the dom without
+		# any references.
 		if @dynamics:length == 0 and !hasDynamicFlags and !dynamicKey
-			if nodes.every(|v| v isa Tag or v isa Str)
+			if nodes.every(|v| v isa Str or (v isa Tag and !v.isDynamicType))
 				if !shouldEnd and !hasNonTagChildren and (parent isa Tag) and !isSlot and !option(:dynamic)
 					canInline = yes
 
@@ -7335,19 +7275,24 @@ export class Tag < TagLike
 
 				if isDetached or true
 					add "{bvar}||({tvar}.up$={fragment.tvar})"
+
 				# dont add cvar always!
+				# rule is just "do we need our own cache?"
 				if @dynamics:length or (@consumed:length and nodes:length)
+					ownCache = yes
 					# console.log "has dynamics? {@dynamics:length}",@consumed.map(|v| v:constructor:name)
-					@cvar = tagvar(:c)
-					add "{cvar}={ref}.${oid} || ({ref}.${oid}=\{\})"
+					# @cvar = tagvar(:c)
+					# add "{cvar}={ref}.${oid} || ({ref}.${oid}=\{\})"
 
 			elif !isReactive
 				add "({ctor})"
 
 			elif canInline
+				@ref = tvar
+				@bvar = parent.bvar
 				add "{parent.bvar} || ({ctor})"
 			else
-				let cref = "{cvar}.{oid}"
+				let cref = @cref = "{cvar}.{oid}"
 				let ref = dynamicKey ? "{cvar}[{dynamicKey}]" : cref
 
 				if markWhenBuilt
@@ -7362,9 +7307,14 @@ export class Tag < TagLike
 				@ref = tvar
 
 				if dynamicKey # and cache
-					@cvar = tagvar(:c)
-					add "{cvar}={ref}.${oid} || ({ref}.${oid}=\{\})"
-					add "({tvar}=={cref}) || (!{cref} && ({cref}={tvar})) || {cref}.replaceWith$({cref}={tvar})"
+					ownCache = yes
+
+			if ownCache
+				@cvar = tagvar(:c)
+				add "{cvar}={ref}.${oid} || ({ref}.${oid}=\{\})"
+
+
+					
 
 		if @slots
 			for own name, slot of @slots
@@ -7495,21 +7445,28 @@ export class Tag < TagLike
 			else
 				add item.c(o)
 
-		if parent isa TagLoopFragment
-			
-			if parent.isKeyed
-				add "{parent.ref}.push({tvar},{parent.kvar}++,{kvar})"
-			elif parent.isIndexed
-				add "{parent.kvar}++"
-
-		elif isFragment and parent and !(parent isa TagBranchFragment)
-			add "{fragment.ref}.insert$({tvar},{@flags})"
 
 		if shouldEnd
 			foot.push("{bvar} || !{tvar}.setup || {tvar}.setup({dvar})") unless isSelf
 			foot.push(isSelf ? "{tvar}.close$({dvar})" : "{tvar}.end$({dvar})")
 
+		if parent isa TagLoopFragment
+			
+			if parent.isKeyed
+				foot.push "{parent.ref}.push({tvar},{parent.kvar}++,{kvar})"
+			elif parent.isIndexed
+				foot.push "{parent.kvar}++"
 
+		elif isFragment and parent and !(parent isa TagBranchFragment)
+			foot.push "{fragment.ref}.insert$({tvar},{@flags})"
+
+		elif parent and isComponent and !(parent isa TagBranchFragment)
+			let pref = fragment.ref
+			let cref = @cref
+			if dynamicKey
+				foot.push "({tvar}=={cref}) || (!{cref} && ({cref}={tvar}).insertInto$({pref})) || {cref}.replaceWith$({cref}={tvar})"
+			else
+				foot.push "{bvar} || {tvar}.insertInto$({pref})"
 
 		if option(:fragmented)
 			add "imba.ctx=null"

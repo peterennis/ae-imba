@@ -1,11 +1,11 @@
-
+import {DocumentFragment,Element,Text,document} from '../dom'
 
 extend class DocumentFragment
 	
 	# Called to make a documentFragment become a live fragment
 	def setup$ flags, options
-		#start = document.createComment('start')
-		#end = document.createComment('end')
+		#start = imba.document.createComment('start')
+		#end = imba.document.createComment('end')
 
 		#end.replaceWith$ = do |other|
 			this.parentNode.insertBefore(other,this)
@@ -120,7 +120,7 @@ class KeyedTagFragment < TagCollection
 
 	def push item, idx
 		# on first iteration we can merely run through
-		unless #f & $TAG_AWAKENED$
+		unless #f & $TAG_INITED$
 			@array.push(item)
 			self.appendChild$(item)
 			return
@@ -183,8 +183,8 @@ class KeyedTagFragment < TagCollection
 		return
 
 	def end$ index
-		unless #f & $TAG_AWAKENED$
-			#f |= $TAG_AWAKENED$
+		unless #f & $TAG_INITED$
+			#f |= $TAG_INITED$
 			return
 
 		if @dirty
@@ -243,10 +243,10 @@ export def createLiveFragment bitflags, options
 	el.setup$(bitflags, options)
 	return el
 
-export def createFragment bitflags, parent
-	if bitflags & $TAG_INDEXED$
-		return IndexedTagFragment.new(bitflags,parent)
-	else
-		return KeyedTagFragment.new(bitflags,parent)
+export def createIndexedFragment bitflags, parent
+	return IndexedTagFragment.new(bitflags,parent)
+
+export def createKeyedFragment bitflags, parent
+	return KeyedTagFragment.new(bitflags,parent)
 
 

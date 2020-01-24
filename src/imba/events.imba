@@ -8,28 +8,29 @@ const keyCodes = {
 	del: [8,46]
 }
 
-# only for web?
-extend class Event
-	
-	def wait$mod state, params
-		Promise.new do |resolve|
-			setTimeout(resolve,(params[0] isa Number ? params[0] : 1000))
+if $web$
+	# only for web?
+	extend class Event
+		
+		def wait$mod state, params
+			Promise.new do |resolve|
+				setTimeout(resolve,(params[0] isa Number ? params[0] : 1000))
 
-	def sel$mod state, params
-		return state.event.target.closest(params[0]) or false
+		def sel$mod state, params
+			return state.event.target.closest(params[0]) or false
 
-	def throttle$mod {handler,element,event}, params
-		return false if handler.throttled
-		handler.throttled = yes
-		let name = params[0]
-		unless name isa String
-			name = "in-{event.type or 'event'}"
-		let cl = element.classList
-		cl.add(name)
-		handler.once('idle') do
-			cl.remove(name)
-			handler.throttled = no
-		return true
+		def throttle$mod {handler,element,event}, params
+			return false if handler.throttled
+			handler.throttled = yes
+			let name = params[0]
+			unless name isa String
+				name = "in-{event.type or 'event'}"
+			let cl = element.classList
+			cl.add(name)
+			handler.once('idle') do
+				cl.remove(name)
+				handler.throttled = no
+			return true
 
 
 # could cache similar event handlers with the same parts
@@ -85,20 +86,13 @@ export class EventHandler
 					# ought to redirect this
 					if typeof par == 'string' && par[0] == '~' and par[1] == '$'
 						let name = par.slice(2)
-						let target = event
+						let chain = name.split('.')
+						let value = state[chain.shift()] or event
 
-						if name[0] == '$'
-							target = target.detail
-							name = name.slice(1)
+						for part,i in chain
+							value = value ? value[part] : undefined
 
-						if name == 'el' and target == event
-							args[i] = element
-						elif name == 'value' and target == event
-							args[i] = state.value
-						elif name == ''
-							args[i] = target
-						else
-							args[i] = target ? target[name] : null
+						args[i] = value
 
 			# console.log "handle part",i,handler,event.currentTarget
 			# check if it is an array?
@@ -130,10 +124,10 @@ export class EventHandler
 				unless keyCodes[handler].indexOf(event.keyCode) >= 0
 					break
 
-			elif handler == 'trigger'
+			elif handler == 'trigger' or handler == 'emit'
 				let name = args[0]
 				let detail = args[1] # is custom event if not?
-				let e = true ? CustomEvent.new(name, bubbles: true, detail: detail) : Event.new(name)
+				let e = CustomEvent.new(name, bubbles: true, detail: detail) # : Event.new(name)
 				e.originalEvent = event
 				let customRes = element.dispatchEvent(e)
 

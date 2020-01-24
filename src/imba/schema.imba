@@ -1,63 +1,4 @@
-# imba$inlineHelpers=1
-# List of the token pairs that must be balanced.
-export var BALANCED_PAIRS = [
-	['(', ')']
-	['[', ']']
-	['{', '}']
-	['{{', '}}']
-	['INDENT', 'OUTDENT'],
-	['CALL_START', 'CALL_END']
-	['PARAM_START', 'PARAM_END']
-	['INDEX_START', 'INDEX_END']
-	['TAG_START','TAG_END']
-	['BLOCK_PARAM_START','BLOCK_PARAM_END']
-]
-
-# The inverse mappings of `BALANCED_PAIRS` we're trying to fix up, so we can
-# look things up from either end.
-export var INVERSES = {}
-
-# The tokens that signal the start/end of a balanced pair.
-# var EXPRESSION_START = []
-# var EXPRESSION_END   = []
-
-for pair in BALANCED_PAIRS
-	var left = pair[0]
-	var rite = pair[1]
-	INVERSES[rite] = left
-	INVERSES[left] = rite
-
-
-export var ALL_KEYWORDS = [
-	'true', 'false', 'null', 'this',
-	'delete', 'typeof', 'in', 'instanceof',
-	'throw', 'break', 'continue', 'debugger',
-	'if', 'else', 'switch', 'for', 'while', 'do', 'try', 'catch', 'finally',
-	'class', 'extends', 'super', 'return',
-	'undefined', 'then', 'unless', 'until', 'loop', 'of', 'by',
-	'when','def','tag','do','elif','begin','var','let','self','await','import',
-	'and','or','is','isnt','not','yes','no','isa','case','nil','require'
-]
-
-export var TOK =
-	TERMINATOR: 'TERMINATOR'
-	INDENT: 'INDENT'
-	OUTDENT: 'OUTDENT'
-	DEF_BODY: 'DEF_BODY'
-	THEN: 'THEN'
-	CATCH: 'CATCH'
-	
-export var OPERATOR_ALIASES =
-	and: '&&'
-	or: '||'
-	is: '=='
-	isnt: '!='
-	isa: 'instanceof' 
-
-export var HEREGEX_OMIT = /\s+(?:#.*)?/g
-export var HEREGEX = /// ^ /{3} ([\s\S]+?) /{3} ([imgy]{0,4}) (?!\w) ///
-
-export var TAG_TYPES = {
+export const TYPES = {
 	"": [-1,{id: 1,className: 'class',slot: 1,part: 1,elementTiming: 'elementtiming'}]
 	HTML: [-1,{title: 1,lang: 1,translate: 1,dir: 1,accessKey: 'accesskey',draggable: 1,spellcheck: 1,autocapitalize: 1,inputMode: 'inputmode',style: 1,tabIndex: 'tabindex',enterKeyHint: 'enterkeyhint'}]
 	HTMLAnchor: [1,{target: 1,download: 1,ping: 1,rel: 1,relList: 'rel',hreflang: 1,type: 1,referrerPolicy: 'referrerpolicy',coords: 1,charset: 1,name: 1,rev: 1,shape: 1,href: 1}]
@@ -197,7 +138,7 @@ export var TAG_TYPES = {
 	SVGUse: [67,{x: 1,y: 1,width: 1,height: 1}]
 	SVGView: [66,{viewBox: 1,preserveAspectRatio: 1}]
 }
-export var TAG_NAMES = {
+export const MAP = {
 	a:2
 	abbr:1
 	address:1
@@ -380,11 +321,11 @@ export var TAG_NAMES = {
 	svg_video:66
 	svg_view:137
 }
-var keys = Object.keys(TAG_TYPES)
+var keys = Object.keys(TYPES)
 for typ,i in keys
-	let item = TAG_TYPES[typ]
-	item:up = TAG_TYPES[keys[item[0]]]
-	item:name = typ + 'Element'
+	let item = TYPES[typ]
+	item.name = typ + 'Element'
+	item.up = TYPES[keys[item[0]]]
 
-for own name,ref of TAG_NAMES
-	TAG_NAMES[name] = TAG_TYPES[keys[ref]]
+for own name,ref of MAP
+	MAP[name] = TYPES[keys[ref]]
