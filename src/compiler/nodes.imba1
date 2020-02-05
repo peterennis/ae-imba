@@ -2831,7 +2831,7 @@ export class TagDeclaration < ClassDeclaration
 		])
 
 		if STACK.tsc
-			sup = superclass ? superclass.toClassName : LIT('ImbaElement')
+			sup = superclass ? superclass.toClassName : LIT('HTMLElement')
 
 		if option(:extension)
 			# TODO remove support - throw when trying to extend
@@ -4354,16 +4354,13 @@ export class VarOrAccess < ValueNode
 		return self
 
 	def c
-		@variable ? super() : M(@token.value,@token)
+		@variable ? super() : @identifier.c() # M(@token.value,@token)
 		# M((@variable ? super() : value.c), @token)
 
 	def js o
-
 		if var v = @variable
-			var out = v.c
-			out += "()" if v.@type == 'meth' and !(o.up isa Call)
-			return out
-		return "NONO"
+			return v.c()
+		throw 'not implemented'
 
 	def node
 		@variable ? self : value
@@ -5035,6 +5032,9 @@ export class TagTypeIdentifier < Identifier
 		@ns == 'svg' or (!isNative and !@ns and TAG_TYPES.SVG.indexOf(@str) >= 0)
 
 	def isCustom
+		!isNative and !isNativeSVG
+
+	def isComponent
 		!isNative and !isNativeSVG
 	
 	def isSimpleNative
@@ -6157,9 +6157,6 @@ export class Splat < ValueNode
 		value
 
 
-
-
-
 # TAGS
 
 
@@ -6329,6 +6326,9 @@ export class TagAttr < TagPart
 	def startLoc
 		@name?.startLoc
 
+	def endLoc
+		@value?.endLoc
+
 	def isStatic
 		super and @chain.every(do |item|
 			let val = item isa Parens ? item.value : item
@@ -6348,6 +6348,7 @@ export class TagAttr < TagPart
 			@key = key.slice(i + 1)
 
 		unless @value
+			@autovalue = yes
 			@value = STR(key)
 
 		if @chain:length
@@ -6380,6 +6381,16 @@ export class TagAttr < TagPart
 		let bval = val
 		let op = M('=',option(:op))
 
+		if STACK.tsc
+			let isAttr = key.match(/^(aria-|data-)/)
+			if isAttr
+				return "{@tag.tvar}.setAttribute('{key}',{val})"
+			# how do we remove attribute then?
+			let path = self.nameIdentifier()
+			let access = "{@tag.tvar}.{M(path,@name)}"
+
+			return "{M(access,@name)}{op}{@autovalue ? M('true',@value) : val}"
+
 		if ns == 'css'
 			"css$('{key}',{val})"
 		elif ns == 'bind'
@@ -6402,6 +6413,7 @@ export class TagAttr < TagPart
 			"style.setProperty('{key}',{val})"
 		else
 			"{M(helpers.dashToCamelCase(key),@name)}{op}{val}"
+
 		# elif dyn or true
 		# 	"set({quoted},{val}{add})"
 		# else
@@ -6687,7 +6699,16 @@ class TagLike < Node
 		option(:indexed)
 
 	def isComponent
-		option(:custom)
+		@kind == 'component'
+
+	def isSelf
+		type isa Self or type isa This
+
+	def isSlot
+		@kind == 'slot'
+
+	def isFragment
+		@kind == 'fragment'
 
 	def hasLoops
 		hasFlag(F.TAG_HAS_LOOPS)
@@ -6918,8 +6939,13 @@ export class TagLoopFragment < TagLike
 		@cvar || tagvar('c')
 
 	def js o
+
 		if stack.isExpression
 			return CALL(FN([],[self]),[]).c
+
+		if STACK.tsc
+			return "{tvar} = new DocumentFragment;\n{value.c(o)}"
+
 		# if @tag and @childTags
 		let iref = option(:indexed) ? LIT('imba.createIndexedFragment') : LIT('imba.createKeyedFragment')
 		# should know how many inner slots this fragment has?
@@ -6979,14 +7005,23 @@ export class Tag < TagLike
 		return returns
 
 	def visitBeforeBody stack
-		@options:type && @options:type.traverse
+		let type = @options:type
+		type && type.traverse
 
-		# Need to potentially resolve tagname to variables first?
-		if isSelf or (tagName.indexOf('-') >= 0) or isDynamicType or (@type?.isCustom)
+		if isSelf or (tagName.indexOf('-') >= 0) or isDynamicType or (type && type.isComponent)
 			@options:custom = yes
+			@kind = 'component'
+		else
+			@kind = 'element'
 
 		if attrs:length == 0 && !@options:type
 			@options:type = 'fragment'
+
+		if tagName == 'slot'
+			@kind = 'slot'
+
+		elif tagName == 'fragment'
+			@kind = 'fragment'
 
 		@dynamics = []
 
@@ -7106,15 +7141,6 @@ export class Tag < TagLike
 
 	def tagName
 		String(@options:type)
-		
-	def isSelf
-		type isa Self or type isa This
-
-	def isSlot
-		tagName == 'slot'
-		
-	def isNative
-		type isa TagTypeIdentifier and type.isSimpleNative
 
 	def isDynamicType
 		type isa ExpressionNode
@@ -7135,8 +7161,7 @@ export class Tag < TagLike
 	def isReactive
 		option(:reactive) or (@parent ? @parent.isReactive : !(scope__ isa RootScope))
 
-	def isFragment
-		tagName == 'fragment'
+	
 
 	def isDetached
 		option(:detached)
@@ -7163,10 +7188,12 @@ export class Tag < TagLike
 		var isReactive = self.isReactive
 
 		var canInline = no
-		var shouldEnd = isComponent or @attrmap:route or @attrmap:routeTo
+		var shouldEnd = isComponent or @attrmap:route or @attrmap:routeTo or @attrmap['route-to']
+
 		var dynamicKey = null
 		var ownCache = no
-		var slotPath = isSlot ? "{fragment.root.tvar}.__slots.{option(:name)}" : ""
+
+		var slotPath = isSlot ? OP('.',LIT("{fragment.root.tvar}.__slots"),STR(option(:name))).c : ""
 
 		if STACK.tsc
 			# if tag is expression we want to suppress certain warnings
@@ -7176,7 +7203,8 @@ export class Tag < TagLike
 				add "{tvar} = {type.c}"
 			for item in @attributes
 				if item isa TagAttr
-					add "{tvar}.{item.c(o)}"
+					add item.c(o) # M("{tvar}.{item.c(o)}",item)
+					# add M("{tvar}.{item.c(o)}",item)
 				self
 			for item in body
 				add item.c
@@ -7668,6 +7696,12 @@ export class ESMSpecifier < Node
 		@name = name
 		@alias = alias
 
+	def visit
+		let key = helpers.clearLocationMarkers((@alias || @name).c())
+		@variable = scope__.root.register(key, self, type: 'const')
+		self
+
+
 	def js
 		if @alias
 			"{@name.c()} as {@alias.c()}"
@@ -7676,6 +7710,7 @@ export class ESMSpecifier < Node
 
 
 export class ImportSpecifier < ESMSpecifier
+
 export class ExportSpecifier < ESMSpecifier
 
 export class ESMSpecifierList < ListNode
@@ -7713,6 +7748,8 @@ export class ImportDeclaration < ESMDeclaration
 			"{M(keyword.c,keyword)} {@source.c}"
 
 	def visit
+		for item in @specifiers
+			item?.traverse()
 		return
 
 		var dec = @declarations = VariableDeclaration.new([])
