@@ -29,7 +29,7 @@ imba.clearInterval = root.clearInterval
 imba.clearTimeout = root.clearTimeout
 
 if $node$
-	import {Document,Node,Text,Comment,Element,HTMLElement,DocumentFragment,document,getElementType} from './ssr'
+	import {Document,Node,Text,Comment,Element,HTMLElement,DocumentFragment,ShadowRoot,document,getElementType} from './ssr'
 	imba.document = document
 
 def imba.q$ query, ctx
@@ -191,7 +191,10 @@ extend class Node
 
 	# replace this with something else
 	def replaceWith$ other
-		@parentNode.replaceChild(other,this)
+		if !(other isa Node) and other.replace$
+			other.replace$(this)
+		else
+			@parentNode.replaceChild(other,this)
 		return other
 
 	def insertInto$ parent
@@ -209,6 +212,12 @@ extend class Node
 			@nextSibling.insertBeforeBegin$(other)
 		else
 			@parentNode.appendChild(other)
+	
+	def insertAfterBegin$ other
+		if @childNodes[0]
+			@childNodes[0].insertBeforeBegin$(other)
+		else
+			@appendChild(other)
 
 extend class Comment
 	# replace this with something else
@@ -338,6 +347,10 @@ Element.prototype.removeChild$ = Element.prototype.removeChild
 Element.prototype.insertBefore$ = Element.prototype.insertBefore
 Element.prototype.replaceChild$ = Element.prototype.replaceChild
 Element.prototype.set$ = Element.prototype.setAttribute
+Element.prototype.setns$ = Element.prototype.setAttributeNS
+
+ShadowRoot.prototype.insert$ = Element.prototype.insert$
+ShadowRoot.prototype.appendChild$ = Element.prototype.appendChild$
 
 # import './fragment'
 import {createLiveFragment,createIndexedFragment,createKeyedFragment} from './internal/fragment'

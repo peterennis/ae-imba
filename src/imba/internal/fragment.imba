@@ -37,6 +37,7 @@ extend class DocumentFragment
 	def insertInto$ parent, before
 		unless #parent
 			#parent = parent
+			# console.log 'insertFrgment into',parent,Array.from(@childNodes)
 			parent.appendChild$(this)
 		return this
 
@@ -52,7 +53,7 @@ extend class DocumentFragment
 		return other
 
 	def appendChild$ child
-		#end.insertBeforeBegin$(child)
+		#end ? #end.insertBeforeBegin$(child) : self.appendChild(child)
 		return child
 
 	def removeChild$ child
@@ -67,6 +68,11 @@ extend class DocumentFragment
 			break if el == end
 			return false if el isa Element or el isa Text
 		return true
+
+
+extend class ShadowRoot
+	get parentContext
+		@host
 
 class TagCollection
 	def constructor f, parent
@@ -91,13 +97,13 @@ class TagCollection
 		if #end and #parent
 			#end.insertBeforeBegin$(item)
 		elif #parent
-			#parent.appendChild(item)
+			#parent.appendChild$(item)
 		return
 
 	def replaceWith$ other
 		@detachNodes()
 		#end.insertBeforeBegin$(other)
-		#parent.removeChild(#end)
+		#parent.removeChild$(#end)
 		#parent = null
 		return
 
@@ -110,7 +116,14 @@ class TagCollection
 			before ? before.insertBeforeBegin$(#end) : parent.appendChild$(#end)
 			@attachNodes()
 		return this
-
+	
+	def replace$ other
+		unless #parent
+			#parent = other.parentNode
+		other.replaceWith$(#end)
+		@attachNodes()
+		self
+		
 	def setup
 		self
 
@@ -165,7 +178,7 @@ class KeyedTagFragment < TagCollection
 		elif #start
 			#start.insertAfterEnd$(item)
 		else
-			#parent.insertAdjacentElement('afterbegin',item)
+			#parent.insertAfterBegin$(item)
 		return
 
 	def removeChild item, index
