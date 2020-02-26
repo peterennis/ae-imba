@@ -6,7 +6,7 @@ var helpers = require './helpers'
 var constants = require './constants'
 var csscompiler = require './css'
 
-import ImbaParseError from './errors'
+import ImbaParseError,ImbaTraverseError from './errors'
 import Token from './token'
 import SourceMap from './sourcemap'
 
@@ -515,6 +515,7 @@ export class Stack
 	prop scopes
 	prop root
 	prop state
+	prop semanticTokens
 
 	def initialize
 		reset
@@ -534,7 +535,18 @@ export class Stack
 		@optlevel = null
 		@tag = null
 		@sfcid = null
+		@semanticTokens = []
 		self
+	
+	def registerSemanticToken token, kind, modifiers
+		if token isa Node
+			token = token.@value
+		if kind isa Variable
+			token.@kind = kind.type
+		else
+			token.@kind = kind
+		@semanticTokens.push(token)
+		
 
 	def incr name
 		@counters[name] ||= 0
@@ -584,6 +596,9 @@ export class Stack
 	def es5
 		# TODO remove
 		@es5 ?= !!(@options:es5 or env('IMBA_ES5'))
+		
+	def hasImplicitSelf
+		!!@options:selfless
 
 	def tsc
 		platform == 'tsc'
@@ -739,6 +754,11 @@ export class Stack
 
 	def scoping
 		@nodes.filter(|n| n.@scope ).map(|n| n.@scope )
+		
+	def currentRegion
+		let l = @nodes:length
+		let node = @nodes[--l]
+		node and [node.startLoc,node.endLoc]
 
 # Lots of globals -- really need to deal with one stack per file / context
 export var STACK = Stack.new
@@ -1656,6 +1676,7 @@ export class ClassField < Node
 
 		if @value and STACK.tsc
 			@value.@scope = MethodScope.new(@value)
+			@value.@scope.@parent = scope__
 			@value.traverse # if @value # dont traverse yet
 
 		if !STACK.tsc
@@ -1697,7 +1718,7 @@ export class ClassField < Node
 			let name = name isa IdentifierExpression ? name.asObjectKey : name.c
 
 			if STACK.tsc
-				out = "{M(name,@name)}" # the value scope?
+				out = "{prefix}{M(name,@name)}" # the value scope?
 				out += " = {@value.c}" if value
 				if let typ = TYP(@name,'jsdoc')
 					out = "{typ}\n{out}"
@@ -1767,6 +1788,12 @@ export class ClassBody < Block
 			@tag = stack.@tag
 
 		for node,i in @nodes
+			if node isa Tag
+				# add as render method
+				# console.log 'add as render method'
+				let meth = MethodDeclaration.new([],[node],Identifier.new('render'),null,{})
+				@nodes[i] = node = meth
+
 			node and node.traverse
 		self
 
@@ -2563,8 +2590,15 @@ export class Root < Code
 
 	def visit
 		ROOT = STACK.ROOT = @scope
-		scope.visit
-		body.traverse
+		try
+			scope.visit
+			body.traverse
+		catch e
+			let err = ImbaTraverseError.wrap(e)
+			err.@filename = OPTS:filename
+			err.@loc = STACK.currentRegion()
+			throw err
+			
 
 	def compile o
 		STACK.reset # -- nested compilation does not work now
@@ -2572,7 +2606,15 @@ export class Root < Code
 		STACK.root = @scope
 		traverse
 		STACK.root = @scope
-
+		
+		if o:onTraversed isa Function
+			o:onTraversed(self,STACK)
+		
+		if OPTS:debug
+			# console.log "semantic tokens",STACK.semanticTokens
+			for tok in STACK.semanticTokens
+				console.log "semantic {tok.@value} - {tok.@kind}"
+		
 		var out = c
 
 		if STACK.tsc
@@ -2718,6 +2760,18 @@ export class ClassDeclaration < Code
 	def visit
 		# replace with some advanced lookup?
 		@body.@delimiter = ''
+		
+		STACK.pop(self)
+		
+		if @superclass
+			@superclass.traverse()
+			# also visit and possibly declare the class name?
+			
+		if option(:extension)
+			@name.traverse()
+		
+		STACK.push(self)
+
 		ROOT.entities.add(namepath,self)
 		scope.visit
 
@@ -3089,10 +3143,12 @@ export class MethodDeclaration < Func
 			set(static: yes)
 			
 		elif o:variable
+			
 			@variable = scope.parent.register(name, self, type: String(o:variable))
 			warn "{String(o:variable)} def cannot have a target" if target
 
 		elif !target
+			@variable = scope.parent.register(name,self,type: 'const')
 			yes
 		
 		if o:export and !(closure isa RootScope)
@@ -4077,7 +4133,8 @@ export class UnaryOp < Op
 			var paren = l.shouldParenthesize(self)
 			# FIXME this is a very hacky workaround. Need to handle all this
 			# in the child instead, problems arise due to automatic caching
-			str = '(' + str + ')' unless str.match(/^\!?([\w\.]+)$/) or l isa Parens or paren or l isa Access or l isa Call
+			unless (str.match(/^\!?([\w\.]+)$/) or l isa Parens or paren or l isa Access or l isa Call) and !str.match(/[\s\&\|]/)
+				str = '(' + str + ')'
 			# l.set(parens: yes) # sure?
 			"{op}{str}"
 
@@ -4243,6 +4300,8 @@ export class Access < Op
 		if safechain and ctx
 			ctx.cache(force: yes)
 			pre = ctx.c + " && "
+		
+		
 
 		# really?
 		# var ctx = (left || scope__.context)
@@ -4253,9 +4312,9 @@ export class Access < Op
 		else
 			var r = rgt isa Node ? rgt.c(expression: yes) : rgt
 			"{ctx.c}[{r}]"
-
-		# if safechain and ctx
-		# 	out = "{ctx.c} && {out}"
+		
+		if rgt isa Identifier and (rgt.isPredicate or rgt.isDangerous)
+			out = "{out}()" unless up isa Call
 
 		out = pre + out
 		return out
@@ -4273,7 +4332,7 @@ export class Access < Op
 
 	def safechain
 		# right.safechain
-		String(@op) == '?.' or String(@op) == '?:'
+		String(@op) == '..' or String(@op) == '?.'
 
 	def cache o
 		(right isa Ivar && !left) ? self : super(o)
@@ -4394,9 +4453,7 @@ export class VarOrAccess < ValueNode
 			# console.log "VarOrAccess {@identifier}"
 			variable = scope.register(value,self,type: state:declaring)
 
-		
-
-		variable ||= scope.lookup(value)
+		variable ||= scope.lookup(value.symbol)
 
 		# does not really need to have a declarator already? -- tricky
 		if variable && variable.declarator
@@ -4425,20 +4482,28 @@ export class VarOrAccess < ValueNode
 				variable.addReference(self)
 				@value = variable # variable.accessor(self)
 				@token.@variable = variable
-				
+				stack.registerSemanticToken(@token,variable)
 				# if vscope isa RootScope and vscope.context != scope.context and variable.type == 'meth'
 				# 	warn "calling method from root scope {value} is deprecated - see issue #112"
 				return self
-
 			# FIX
 			# @value.safechain = safechain
+		else
+			# console.log 'does implicit self exist?',stack.hasImplicitSelf,"{@value} - {@variable}"
+			if stack.hasImplicitSelf and !@identifier.isCapitalized
+				@value = Access.new(".",scope.context,@value)
+				stack.registerSemanticToken(@token,'accessor')
+			else
+				self
 		return self
 
-	def c
-		@variable ? super() : @identifier.c() # M(@token.value,@token)
-		# M((@variable ? super() : value.c), @token)
+	# def c
+	# 	@variable ? super() : @value.c() # M(@token.value,@token)
+	# 	# M((@variable ? super() : value.c), @token)
 
 	def js o
+		return (@variable or @value).c()
+		
 		if var v = @variable
 			return v.c()
 		throw 'not implemented'
@@ -4482,22 +4547,6 @@ export class VarOrAccess < ValueNode
 	def toJSON
 		{type: typeName, value: @identifier.toString}
 
-#	def js
-#		if right isa Variable and right.type == 'meth'
-#			return "{right.c}()" unless up isa Call
-#
-#		right.c
-#
-#	def variable
-#		right
-#
-#	def cache o = {}
-#		super if o:force
-#		self
-#
-#	def alias
-#		variable.@alias or super # if resolved?
-#
 
 export class VarReference < ValueNode
 
@@ -4877,6 +4926,15 @@ export class Identifier < Node
 
 	def isReserved
 		@value:reserved or RESERVED_TEST.test(String(@value))
+		
+	def isPredicate
+		(/\?$/).test(String(@value))
+	
+	def isDangerous
+		(/\!$/).test(String(@value))
+		
+	def isCapitalized
+		(/^[A-Z]/).test(String(@value))
 
 	def symbol
 		@symbol ||= AST.sym(value)
@@ -4949,7 +5007,7 @@ export class Ivar < Identifier
 		self
 
 	def name
-		helpers.dashToCamelCase(@value).replace(/^[@\#]/,'')
+		helpers.dashToCamelCase(@value).replace(/^[\#]/,'')
 		# value.c.camelCase.replace(/^@/,'')
 
 	def alias
@@ -4957,12 +5015,22 @@ export class Ivar < Identifier
 
 	# the @ should possibly be gone from the start?
 	def js o
-		return name
+		return symbol
 
 
 export class Decorator < ValueNode
+
+	def name
+		@name ||= @value.slice(2)
 	
 	def visit
+		
+		@variable = scope__.lookup(name)
+		# console.log 'visit decorator',name,!!@variable
+		
+		# if we dont have a variable and we are in a top level class
+		# add a warning?
+
 		@call.traverse if @call
 		if option(:params)
 			@params = option(:params)
@@ -4975,7 +5043,20 @@ export class Decorator < ValueNode
 	def c 
 		# should return other places as well...
 		return if STACK.current isa ClassBody
-		let out = @value.c.slice(2)
+		# name must be a 
+		let out
+		
+		
+		if @variable
+			out = @variable.c
+		else
+			let op = OP(
+				'||',
+				OP('.',THIS,'decorate$' + AST.sym(name)),
+				OP('.',LIT('imba'),'decorate$' + AST.sym(name))
+			)
+			out = '(' + op.c + ')'
+
 		if @params
 			out += "({@params.c(expression: yes)})"
 		else
@@ -6028,8 +6109,8 @@ export class Switch < ControlFlowStatement
 
 	def visit
 		c.traverse for c in cases
-		fallback.visit if fallback
-		source.visit if source
+		fallback.traverse if fallback
+		source.traverse if source
 		return
 
 
@@ -7014,6 +7095,7 @@ export class TagSwitchFragment < TagLike
 
 	def js o
 		var out = body.c(o)
+		return out if STACK.tsc
 		for item in @inserts
 			let key = "{cvar}.{item}"
 			out += "\n({key}_ = {tvar}.insert$({item},0,{key}_));"
@@ -7228,7 +7310,7 @@ export class Tag < TagLike
 
 		elif type == TagData
 			let bind = String(self.type) in ['input','textarea','select','button','option']
-			curr = TagAttr.new(bind ? 'bind:model' : 'model')
+			curr = TagAttr.new(bind ? 'bind:model' : 'model',self)
 			curr.value = part.first
 			attrs.push(curr)
 			next = null
@@ -7309,8 +7391,12 @@ export class Tag < TagLike
 			# if tag is expression we want to suppress certain warnings
 			if type isa TagTypeIdentifier and !isSelf
 				add "{tvar} = new {M(type.toClassName,type)}"
-			else
+			elif isSelf
 				add "{tvar} = {type.c}"
+			else
+				add "{tvar} = new {M('HTMLElement',type)}"
+				add "{type.c}" # this is the string
+
 			for item in @attributes
 				if item isa TagAttr
 					add item.c(o) # M("{tvar}.{item.c(o)}",item)
@@ -7814,8 +7900,8 @@ export class ESMSpecifier < Node
 		@name = name
 		@alias = alias
 
-	def visit
-		@declaration = STACK.up(ESMDeclaration)
+	def visit stack
+		@declaration = stack.up(ESMDeclaration)
 		if @declaration isa ImportDeclaration
 			@importer = @declaration
 		else
@@ -7830,7 +7916,8 @@ export class ESMSpecifier < Node
 			unless @exporter.source
 				@variable = scope__.root.lookup(@cname)
 		else
-			@variable = scope__.root.register(@key, self, type: 'const')
+			@variable = scope__.root.register(@key, self, type: 'imported')
+			stack.registerSemanticToken (@alias or @name), @variable
 		self
 
 
@@ -8168,7 +8255,9 @@ export class Util.Extend < Util
 	def helper
 		'''
 		function extend$(target,ext){
+			// @ts-ignore
 			var descriptors = Object.getOwnPropertyDescriptors(ext);
+			// @ts-ignore
 			Object.defineProperties(target.prototype,descriptors);
 			return target;
 		};
@@ -8467,9 +8556,9 @@ export class Scope
 		var existing = @varmap.hasOwnProperty(name) && @varmap[name]
 		
 		if existing
-			if decl
+			if decl and existing.type != 'global'
 				decl.warn('Cannot redeclare variable')
-			console.log 'redeclaring variable',"{existing} {decl}"
+			# console.log 'redeclaring variable',"{existing} {decl}",existing.type
 			
 		# FIXME check if existing is required to be unique as well?
 		if existing and !o:unique
@@ -8761,7 +8850,8 @@ export class RootScope < Scope
 	def imbaDependency path
 		return if OPTS:imbaPath === null or OPTS:standalone or OPTS:target == 'tsc'
 		@dependencies[path] ||= if true
-			let item = LIT("import '{OPTS:imbaPath or 'imba'}/src/imba/{path}'")
+			let str = "'{OPTS:imbaPath or 'imba'}/src/imba/{path}'"
+			let item = STACK.cjs ? LIT("require({str})") : LIT("import {str}")
 			@head.push(item)
 			item
 			
