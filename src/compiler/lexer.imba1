@@ -9,6 +9,7 @@ import INVERSES from './constants'
 var K = 0
 
 var ERR = require './errors'
+var helpers = require './helpers'
 
 # Constants
 # ---------
@@ -73,8 +74,8 @@ var METHOD_IDENTIFIER = /// ^
 # added hyphens to identifiers now - to test
 var IDENTIFIER = /// ^
 	(
-		(\$|@@)[\$\wA-Za-z_\-\x7f-\uffff][$\w\x7f-\uffff]* (\-[$\w\x7f-\uffff]+)* [\?\!]? |
-		[$A-Za-z_][$\w\x7f-\uffff]* (\-[$\w\x7f-\uffff]+)* [\?\!]?
+		(\$|@@)[\$\wA-Za-z_\-\x7f-\uffff][$\w\x7f-\uffff]* (\-[$\w\x7f-\uffff]+)* [\?]? |
+		[$A-Za-z_][$\w\x7f-\uffff]* (\-[$\w\x7f-\uffff]+)* [\?]?
 	)
 	( [^\n\S]* : (?![\*\=:$\w\x7f-\uffff]) )?  # Is this a property name?
 ///
@@ -643,6 +644,11 @@ export class Lexer
 	def isKeyword id
 		if @lastTyp == 'ATTR' or @lastTyp == 'PROP' or @lastTyp == 'DEF'
 			return false 
+			
+		if (id == 'guard' or id == 'alter' or id == 'watch') and (getScope == 'PROP')
+			console.log 'got here!'
+			# only if we are on a newline? or something?
+			return true
 
 		if (id == 'attr' or id == 'prop' or id == 'get' or id == 'set' or id == 'lazy')
 			var scop = getScope
@@ -747,7 +753,6 @@ export class Lexer
 			token 'ELSE', 'elif', id:length
 			token 'IF', 'if'
 			return id:length
-
 		else
 			typ = 'IDENTIFIER'
 
@@ -933,8 +938,9 @@ export class Lexer
 		prev = last(@tokens)
 
 		if !prev or prev:spaced or @prevVal in ['(','[','=']
-			token 'STRING', '"' + symbol.slice(1) + '"', match[0]:length
-			warn error("Symbols are deprecated - use strings '{symbol.slice(1)}'")
+			let sym = helpers.dashToCamelCase(symbol.slice(1))
+			token 'STRING', '"' + sym + '"', match[0]:length
+			# warn error("Symbols are deprecated - use strings '{symbol.slice(1)}'")
 			return match[0]:length
 		return 0
 
@@ -1462,6 +1468,10 @@ export class Lexer
 				tVs(prev,pv + '=') # need to change the length as well
 				prev.@len = @loc - prev.@loc + value:length
 				return value:length
+				
+		if value == 'ƒ'
+			tokid = 'DO'
+			
 
 		if value == '|'
 			# hacky way to implement this
@@ -1532,6 +1542,9 @@ export class Lexer
 
 		elif value == ',' and context == 'IMPORT'
 			tokid = "IMPORT_COMMA"
+		
+		elif value == '!' and prev and !prev:spaced and ([']',')'].indexOf(pv) >= 0 or pt == 'IDENTIFIER')
+			tokid = 'BANG'
 
 		elif value == '**'
 			tokid = 'EXP'
@@ -1554,6 +1567,9 @@ export class Lexer
 
 			if value is '(' and pt in CALLABLE
 				tokid = 'CALL_START'
+
+			elif value is '(' and pt == 'DO'
+				tokid = 'BLOCK_PARAM_START'
 
 			elif value is '[' and pt in INDEXABLE
 				tokid = 'INDEX_START'
