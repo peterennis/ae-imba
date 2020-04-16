@@ -9,10 +9,10 @@ tag app-bar
 			<h1> "BAR"
 
 tag app-root
-	@view = 'foo'
+	prop view = 'foo'
 
 	def change type
-		@view = type
+		view = type
 
 	def render
 		<self>
@@ -20,9 +20,9 @@ tag app-root
 			# second click on 'FOO' renders app-foo and app-bar
 			<div :click.change('foo')> "FOO"
 			<div :click.change('bar')> "BAR"
-			if @view == 'foo'
+			if view == 'foo'
 				<app-foo>
-			elif @view == 'bar'
+			elif view == 'bar'
 				<app-bar>
 			else
 				<app-not-found>

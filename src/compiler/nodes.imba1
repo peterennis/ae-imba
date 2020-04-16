@@ -1671,27 +1671,28 @@ class InstanceInitBlock < Block
 
 export class ClassField < Node
 	prop name
-	prop value
 
-	def initialize name, value
+	def initialize name
 		super
 		@name = name
-		@value = value
 
 	def visit
 		@decorators = up?.collectDecorators
 		@name.traverse if @name and @name:traverse
 
-		if @value and STACK.tsc
-			@value.@scope = MethodScope.new(@value)
-			@value.@scope.@parent = scope__
-			@value.traverse # if @value # dont traverse yet
+		if value and STACK.tsc
+			value.@scope = MethodScope.new(value)
+			value.@scope.@parent = scope__
+			value.traverse # if @value # dont traverse yet
 
 		if !STACK.tsc
 			@storage = scope__.root.declare(null,LIT('new WeakMap()'))
 
 		# traverse value with a different scope
 		self
+		
+	def value
+		option(:value)
 
 	def target
 		option(:static) ? LIT('this') : LIT('this.prototype')
@@ -1711,11 +1712,6 @@ export class ClassField < Node
 	def loc
 		[@name.@loc,@name.region[1]]
 
-	# def js s
-	# 	return if s.up isa ClassBody
-	# 
-	# 	util.setField(slf,@name,@value or LIT('void 0')).c
-
 	def c
 		let up = STACK.current
 		let out
@@ -1727,7 +1723,7 @@ export class ClassField < Node
 
 			if STACK.tsc
 				out = "{prefix}{M(name,@name)}" # the value scope?
-				out += " = {@value.c}" if value
+				out += " = {value.c}" if value
 				if let typ = TYP(@name,'jsdoc')
 					out = "{typ}\n{out}"
 			else
@@ -1735,7 +1731,7 @@ export class ClassField < Node
 
 		elif up isa ClassInitBlock and !STACK.tsc
 			if !isLazy and isPlain and value
-				out = util.setField(target,name,@value).c + ';\n'
+				out = util.setField(target,name,value).c + ';\n'
 			# else
 			# 	let obj = Obj.wrap(enumerable: false, writable: true, value: LIT('undefined'))
 			# 	out = util.initField(target,storageKey,obj).c + ';\n'
@@ -1774,13 +1770,25 @@ export class ClassField < Node
 		@setter ||= if true
 			let op = CALL(GET(@storage,'set'),[THIS,LIT('value')])
 			# OP('=',OP('.',THIS,storageKey),LIT('value'))
-			FN([LIT('value')],[op])
+			FN([LIT('value')],[op]).set(noreturn: true)
 
 	def decorater
 		@decorater ||= if true
 			# let target = option(:static) ? LIT('this') : LIT('this.prototype')
 			util.decorate(Arr.new(@decorators),target,name,LIT('null'))
 
+export class ClassAttribute < ClassField
+	def getter
+		@getter ||= if true
+			let op = CALL(GET(THIS,'getAttribute'),[name.toAttrString])
+			FN([],[op])
+	
+	def setter
+		@setter ||= if true
+			let op = CALL(GET(THIS,'setAttribute'),[name.toAttrString,LIT('value')])
+			FN([LIT('value')],[op]).set(noreturn: true)
+	
+	
 
 export class ClassBody < Block
 
@@ -2859,6 +2867,8 @@ export class TagDeclaration < ClassDeclaration
 		scope.virtualize # is this always needed?
 		scope.context.value = name
 		scope.context.reference = name
+		
+		let className = name.toClassName
 
 		if s.option(:hasScopedStyles) and !STACK.tsc
 			# @scope.root.styles:length > 0
@@ -2873,21 +2883,23 @@ export class TagDeclaration < ClassDeclaration
 		if STACK.tsc
 			sup = superclass ? superclass.toClassName : LIT('HTMLElement')
 			body.unshift(LIT(TSC_CLASS_HEAD))
+			if option(:extension)
+				className = "Extended${className}"
+
 			# if false
 			# let comment = "/*¡{name.c.slice(1,-1)}*/"
 			# let add = helpers.clearLocationMarkers("this.{comment}prototype.constructor;")
 			# let fn = 'static meta$(){ ' + add + ' }\n'
 			# body.unshift(LIT(fn))
 
-		if option(:extension)
-			# TODO remove support - throw when trying to extend
+		elif option(:extension)
 			@body.@delimiter = ','
 			@body.set(braces: yes)
 			let cls = CALL(LIT('imba.tags.get'),[name,STR(name.toClassName)])
 			let tagname = TagTypeIdentifier.new(name)
 			return util.extend(cls,body).c
 
-		let className = name.toClassName
+		
 		let closure = scope__.parent
 		let jsbody = body.c()
 		let jshead = "{M 'class', keyword} {M className, name} extends {M sup, superclass}"
@@ -2900,7 +2912,8 @@ export class TagDeclaration < ClassDeclaration
 			let ext = (option(:extends) or LIT('{}')).c
 			js += "; imba.tags.define({name.c},{className},{ext})"
 		else
-			js += "; globalThis.{M className, name} = {className};"
+			unless option(:extension)
+				js += "; globalThis.{M className, name} = {className};"
 			# let comment = "/*¡{name.c.slice(1,-1)}*/"
 			# js +=  helpers.clearLocationMarkers("{className}.{comment}prototype.constructor")
 		return js
@@ -3219,213 +3232,6 @@ export class MethodDeclaration < Func
 			out = "return {out}"
 
 		return out
-
-
-export class TagFragmentDeclaration < MethodDeclaration
-
-
-export class PropertyDeclaration < Node
-	var propTemplate = '''
-
-	get ${getter}(){ return ${get}; }
-	set ${getter}(v){ ${set}; }
-	${meta}
-	'''
-
-	var propWatchTemplate = '''
-	get ${getter}(){ return ${get}; }
-	set ${getter}(v){
-		var a = ${get};
-		if(v != a) { ${set}; }
-		if(v != a) { ${ondirty} }
-	}
-	${meta}
-	'''
-
-	prop name
-	prop schema
-	prop value
-
-	def initialize name, schema, token
-		@token = token
-		@traversed = no
-		@name = name
-		@schema = schema || Obj.new(AssignList.new)
-
-	def visit
-		@decorators = up?.collectDecorators
-		@name.traverse if @name and @name:traverse
-		@schema.traverse
-		@value = option(:value)
-		# if @value
-		# @value.traverse if @value
-		scope__.entities.add(name,self)
-		self
-	
-	def toJSON
-		{
-			type: "prop"
-			name: "" + name
-			desc: @desc
-			loc: loc
-		}
-	
-	def loc
-		[@token.@loc,@name.region[1]]
-
-	def storageKey
-		@storageKey ||= STR(name.c + '$$')
-
-	def isPlain
-		!@decorators and (!@value or @value.isPrimitive)
-
-	def isStatic
-		option(:static)
-
-	def isLazy
-		option(:lazy)
-
-	def getter
-		@getter ||= if true
-			let op = OP('.',THIS,storageKey)
-			let getter = op
-			if value and (!(value isa Str) and !(value isa Str) and !(value isa Bool) or @decorators)
-				# and !value.isPrimitive # only strings and numbers
-				let setter = OP('=',getter,value)
-				# op = IF(OP('==',getter,LIT('undefined')),setter)
-				op = IF(CALL(LIT('!this.hasOwnProperty'),[storageKey]),setter)
-				op = METH([],[op,BR,getter])
-				op.traverse
-				return op
-			else
-				return FN([],[op])
-
-	def setter
-		@setter ||= if true
-			let op = OP('=',OP('.',THIS,storageKey),LIT('value'))
-			FN([LIT('value')],[op])
-
-	def decorater
-		@decorater ||= if true
-			# let target = option(:static) ? LIT('this') : LIT('this.prototype')
-			util.decorate(Arr.new(@decorators),target,name,LIT('null'))
-
-	def target
-		option(:static) ? LIT('this') : LIT('this.prototype')
-
-	# This will soon support bindings / listeners etc, much more
-	# advanced generated code based on options passed in.
-	def c
-		let up = STACK.current
-		let out
-
-		if up isa ClassBody
-			return if isPlain
-			let prefix = isStatic ? 'static ' : ''
-			out = "{prefix}set {name}{setter.c(keyword: '')}\n{prefix}get {name}{getter.c(keyword: '')}"
-
-		elif up isa ClassInitBlock
-			if !isLazy and isPlain and value
-				out = util.setField(target,name,@value).c + ';\n'
-			# else
-			# 	let obj = Obj.wrap(enumerable: false, writable: true, value: LIT('undefined'))
-			# 	out = util.initField(target,storageKey,obj).c + ';\n'
-
-		elif up isa InstanceInitBlock and !isStatic and !isLazy
-			if value
-				# out = util.setField(THIS,name,value).c + ';\n'
-				out = OP('.',THIS,name).c + ';\n'
-
-		return out
-
-		var o = schema
-		var ast = ""
-		var key = name.js
-		var scope = STACK.scope
-		var value = option(:value)
-
-		var addDesc = o.keys:length
-
-		var pars = o.hash
-
-		var isAttr = (@token and String(@token) == 'attr')
-		var isNative = pars:native isa Bool ? pars:native.isTruthy : undefined
-
-		var js =
-			key: key
-			getter: key
-			scope: "{scope.context.c}"
-			path: '${scope}.prototype'
-			set: "this.__{key} = v"
-			get: "this.__{key}"
-			init: ""
-			headers: ""
-			ondirty: ""
-
-		var tpl = propTemplate
-
-		o.add('name',Symbol.new(key))
-
-		if pars:watch
-			tpl = propWatchTemplate unless pars:watch isa Bool and !pars:watch.isTruthy
-			var wfn = "{key}DidSet"
-
-			if pars:watch isa Symbol
-				wfn = pars:watch
-			elif pars:watch isa Str
-				wfn = pars:watch
-			elif pars:watch isa Bool
-				o.key(:watch).value = Symbol.new("{key}DidSet")
-			else
-				wfn = null
-
-			if wfn
-				let fn = OP('.',This.new,wfn)
-				js:ondirty = OP('&&',fn,CALL(fn,['v','a',"this.__{key}"])).c
-			else
-				js:ondirty = "{scope__.imba.c}.propDidSet(this,this.__{key},v,a)"
-
-		if isAttr # (@token and String(@token) == 'attr') or o.key(:dom) or o.key(:attr)
-			js:set = 'this.setAttribute("${key}",v,${desc})'
-			js:get = 'this.getAttribute("${key}",${desc})'
-
-		elif o.key(:delegate)
-			# if we have a delegate
-			js:set = "v = this.__{key}.delegate.set('{key}',v,this,$\{desc\})"
-			js:get = "this.__{key}.delegate.get('{key}',this,$\{desc\})"
-
-		if pars:get isa Str
-			js:get = "this.{pars:get.raw}()"
-
-		if pars:set isa Str
-			js:set = "this.{pars:set.raw}(v)"
-
-		if pars:default
-			# how can we support this with new syntax?
-			js:init = "{js:path}._{key} = {pars:default.c};"
-
-		js:options = o.c
-
-		if addDesc
-			let tmpvar = scope__.root.declare(null,o)
-			js:desc = tmpvar.c
-			js:meta = 'get ___${key}(){ return ${desc} }'
-
-		var reg = /\$\{(\w+)\}/gm
-		# var tpl = o.key(:watch) ? propWatchTemplate : propTemplate
-		var out = tpl.replace(reg) do |m,a| js[a] or ''
-		# run another time for nesting. hacky
-		out = out.replace(reg) do |m,a| js[a] or ''
-		# out = out.replace(/\n\s*$/,'')
-		out = out.replace(/^\s+|\s+$/g, '')
-
-		if option(:static)
-			out = out.replace(/^([\s\t]*)(get|set) /mg) do |m,pre,typ|
-				"{pre}static {typ} "
-		# if o.key(:v)
-		return out
-
-
 
 # Literals should probably not inherit from the same parent
 # as arrays, tuples, objects would be better off inheriting
@@ -4210,9 +4016,10 @@ export class In < Op
 		self
 
 	def js o
-		var cond = @invert ? "== -1" : ">= 0"
-		var idx = Util.indexOf(left,right)
-		"{idx.c} {cond}"
+		# var cond = @invert ? "== -1" : ">= 0"
+		# var idx = Util.indexOf(left,right)
+		var out = util.contains(left,right)
+		"{@invert ? '!' : ''}{out.c}"
 
 
 
@@ -4942,6 +4749,9 @@ export class Identifier < Node
 
 	def toStr
 		return Str.new("'" + symbol + "'")
+		
+	def toAttrString
+		return Str.new("'" + String(@value) + "'")
 
 	def toJSON
 		toString
@@ -4979,6 +4789,14 @@ export class Identifier < Node
 		@variable = variable
 		stack.registerSemanticToken(@value,@variable)
 		return self
+
+export class DecoratorIdentifier < Identifier
+	
+	def symbol
+		"decorator${@value.slice(1)}"
+		
+	def toString
+		symbol
 
 export class Private < Identifier
 
@@ -5029,15 +4847,11 @@ export class Ivar < Identifier
 export class Decorator < ValueNode
 
 	def name
-		@name ||= @value.slice(2)
+		@name ||= @value.js
 	
 	def visit
-		
 		@variable = scope__.lookup(name)
-		# console.log 'visit decorator',name,!!@variable
-		
-		# if we dont have a variable and we are in a top level class
-		# add a warning?
+		@value.@variable ||= @variable
 
 		@call.traverse if @call
 		if option(:params)
@@ -5051,24 +4865,13 @@ export class Decorator < ValueNode
 	def c 
 		# should return other places as well...
 		return if STACK.current isa ClassBody
-		# name must be a 
-		let out
-		
-		
-		if @variable
-			out = @variable.c
-		else
-			let op = OP(
-				'||',
-				OP('.',THIS,'decorate$' + AST.sym(name)),
-				OP('.',LIT('imba'),'decorate$' + AST.sym(name))
-			)
-			out = '(' + op.c + ')'
 
+		let out = @value.c
+		
 		if @params
-			out += "({@params.c(expression: yes)})"
+			out += ".bind([{@params.c(expression: yes)}])"
 		else
-			out += "()"
+			out += ".bind([])"
 		return out
 
 # Ambiguous - We need to be consistent about Const vs ConstAccess
@@ -8297,6 +8100,11 @@ var HELPERS = {
 		if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
 		else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
 		return c > 3 && r && Object.defineProperty(target, key, r), r;
+	};'''
+	
+	contains: '''(a,b){
+		var res = (b && b.indexOf) ? b.indexOf(a) : [].indexOf.call(a,b);
+		return res >= 0;
 	};'''
 	
 	requireDefault: '''(obj){

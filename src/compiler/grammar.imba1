@@ -203,6 +203,7 @@ var grammar =
 
 	ImportSpecifier: [
 		o 'Identifier' do ImportSpecifier.new(A1)
+		o 'DecoratorIdentifier' do ImportSpecifier.new(A1)
 		o 'Identifier AS Identifier' do ImportSpecifier.new(A1, A3)
 		o 'DEFAULT' do ImportSpecifier.new(Literal.new(A1))
 		o 'DEFAULT AS Identifier' do ImportSpecifier.new(Literal.new(A1), A3)
@@ -237,7 +238,6 @@ var grammar =
 		o 'Class' # statement, no?
 		o 'TagDeclaration'
 		o 'Tag'
-		o 'Property'
 	]
 
 	Private: [
@@ -248,6 +248,10 @@ var grammar =
 	# A literal identifier, a variable name or property.
 	Identifier: [
 		o 'IDENTIFIER' do Identifier.new A1
+	]
+	
+	DecoratorIdentifier: [
+		o 'DECORATOR' do DecoratorIdentifier.new A1
 	]
 
 	Key: [
@@ -268,9 +272,9 @@ var grammar =
 	]
 	
 	Decorator: [
-		o 'DECORATOR' do Decorator.new A1 # kinda hacky, should be defined as something else
-		o 'DECORATOR ( )' do Decorator.new(A1)
-		o 'DECORATOR ( ArgList )' do Decorator.new(A1).set(params: A3)
+		o 'DecoratorIdentifier' do Decorator.new A1 # kinda hacky, should be defined as something else
+		o 'DecoratorIdentifier ( )' do Decorator.new(A1)
+		o 'DecoratorIdentifier ( ArgList )' do Decorator.new(A1).set(params: A3)
 	]
 
 	Decorators: [
@@ -493,33 +497,9 @@ var grammar =
 		o 'DO BLOCK_PARAM_START ParamList BLOCK_PARAM_END Block' do Lambda.new A3, A5, null, null, {bound: true, keyword: A1}
 	]
 
-	Property: [
-		# o 'STATIC PropType PropertyIdentifier PropertyOptions' do PropertyDeclaration.new(A3, A4, A2).set(static: A1)
-		o 'PropType PropertyIdentifier PropertyOptions' do PropertyDeclaration.new(A2, A3, A1)
-		o 'PropType PropertyIdentifier PropertyOptions = Expression' do PropertyDeclaration.new(A2, A3, A1).set(value: A5)
-	]
-
-	PropertyOptions: [
-		o '' do null
-		o 'CALL_START Object CALL_END' do A2
-		o 'Object' do A1
-	]
-
-	PropType: [
-		o 'PROP'
-		o 'ATTR'
-	]
-
-	PropertyIdentifier: [
-		# also private
-		o 'Identifier'
-		o '{ Expression }' do A2
-	]
-
 	# FIXME clean up method
 	Method: [
 		o 'MethodDeclaration' do A1
-		# o 'VarKeyword MethodDeclaration' do A2.set(variable: A1)
 		o 'GLOBAL MethodDeclaration' do A2.set(global: A1)
 		o 'STATIC MethodDeclaration' do A2.set(static: A1)
 	]
@@ -544,6 +524,7 @@ var grammar =
 
 	MethodIdentifier: [
 		o 'Identifier'
+		o 'DecoratorIdentifier'
 		o '[ Expression ]' do InterpolatedIdentifier.new(A2)
 	]
 
@@ -784,29 +765,21 @@ var grammar =
 	ClassDeclLine: [
 		o 'STATIC ClassDeclLine' do A2.set(static: A1)
 		o 'MethodDeclaration'
-		o 'ClassFieldIdentifier = Expression' do ClassField.new(A1, A3)
-		o 'ClassFieldIdentifier' do ClassField.new(A1, null)
-		o 'ClassFieldIdentifier ClassFieldBody' do ClassField.new(A1, null,A2)
-		o 'ClassFieldIdentifier INDENT ClassFieldBody OUTDENT' do ClassField.new(A1, null,A3)
+		o 'ClassField = Expression' do A1.set(value: A3) # ClassField.new(A1, A3)
+		o 'ClassField' do A1
+		# o 'ClassFieldIdentifier ClassFieldBody' do ClassField.new(A1, null,A2)
+		# o 'ClassFieldIdentifier INDENT ClassFieldBody OUTDENT' do ClassField.new(A1, null,A3)
+	]
+
+	ClassField: [
+		o 'PROP Identifier' do ClassField.new(A2).set(keyword: A1)
+		o 'ATTR Identifier' do ClassAttribute.new(A2).set(keyword: A1)
+		o 'ClassField TypeAnnotation' do A1.set(datatype: A2)
 	]
 	
 	ClassFieldBody: [
 		o 'WATCH Expression Terminator' do [A1,A2]
 	]
-
-	ClassFieldIdentifier: [
-		o 'Private'
-		o 'IDENTIFIER' do IdentifierExpression.new(A1)
-		o 'VAR IDENTIFIER' do IdentifierExpression.new(A2)
-		o 'PROP IDENTIFIER' do IdentifierExpression.new(A2)
-		o 'ATTR IDENTIFIER' do IdentifierExpression.new(A2)
-		o '@ IDENTIFIER' do IdentifierExpression.new(A2)
-		o '@ { Expression }' do IdentifierExpression.new(A3)
-		# o '[ Expression ]' do IdentifierExpression.new(A2)
-		o 'ClassFieldIdentifier TypeAnnotation' do A1.set(datatype: A2)
-	]
-
-
 
 	# Ordinary function invocation, or a chained series of calls.
 	Invocation: [
