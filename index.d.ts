@@ -10,27 +10,47 @@ interface Element {
     route: any;
     route__: any;
     $key: any;
-    emit(event:string, params?: any): Event;
+    emit(event:string, params?: any, options?: any): Event;
     focus(options?: any): void;
     blur(): void;
+    
+    [key: string]: any;
+
+    setAttribute(name: string, value: boolean): void;
+    setAttribute(name: string, value: number): void;
 }
 
 interface ImbaElement implements Element {
+    [key: string]: any;
 }
 
 interface ImbaAnyElement implements ImbaElement {
     [key: string]: any;
 }
 
+interface ImbaStyles {
+    [key: string]: any;
+}
 
-interface Imba {
+interface ImbaAsset {
+    body: string;
+    url: string;
+    absPath: string;
+    path: string;
+}
+
+
+interface ImbaContext {
     setInterval(handler: TimerHandler, timeout?: number, ...arguments: any[]): number;
     setTimeout(handler: TimerHandler, timeout?: number, ...arguments: any[]): number;
     clearInterval(handle?: number): void;
     clearTimeout(handle?: number): void;
     commit(): Promise<this>;
+    render(): Promise<this>;
 
     mount<T>(element: T): T;
+
+    styles: ImbaStyles;
 
     createIndexedFragment(...arguments: any[]): DocumentFragment;
     createKeyedFragment(...arguments: any[]): DocumentFragment;
@@ -41,6 +61,21 @@ interface Imba {
     once(target: any, event:string, listener:any, path?: any): void;
     unlisten(target: any, event:string, listener:any, path?: any): void;
     indexOf(target: any, source:any): boolean;
+
+    serve(target: any, options?:any): any;
 }
 
-declare const imba: Imba
+interface Event {
+    detail: any;
+    originalEvent: Event | null;
+}
+
+interface Object {
+    [key: string]: any;
+}
+
+declare const imba: ImbaContext
+
+declare global {
+    imba: ImbaContext;
+}

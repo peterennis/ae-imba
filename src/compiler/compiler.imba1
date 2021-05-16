@@ -8,12 +8,15 @@ var lexer = require './lexer'
 var rewriter = require './rewriter'
 export var parser = require('../../build/parser')['parser']
 var ast = require './nodes'
+var transformers = require './transformers'
 
+import resolveConfigFile from './imbaconfig'
 import ImbaParseError from './errors'
+
+import {Diagnostic,Compilation} from './compilation'
 
 # Instantiate a Lexer for our use here.
 export var lex = lexer.Lexer.new
-export var css = require './css'
 export var Rewriter = rewriter.Rewriter
 export var helpers = util
 var rewriter = Rewriter.new
@@ -21,71 +24,44 @@ var rewriter = Rewriter.new
 parser:lexer = lex.jisonBridge
 parser:yy = ast # everything is exported right here now
 
+Compilation:prototype:lexer = lex
+Compilation:prototype:rewriter = rewriter
+Compilation:prototype:parser = parser
 
-export def tokenize code, o = {}
-	try
-		# console.log('tokenize') if o:profile
-		console.time('tokenize') if o:profile
-		o.@source = code
-		lex.reset
-		var tokens = lex.tokenize code, o
-		console.timeEnd('tokenize') if o:profile
+# normalize compiler options, resolve imbaconfig.json++
+export def resolveConfig o = {}
+	let path = o:sourcePath
+	o:config ||= resolveConfigFile(path,o) or {}
+	return o
 
-		unless o:rewrite === no
-			tokens = rewriter.rewrite(tokens,o)
-		return tokens
+export def deserialize data, options = {}
+	Compilation.deserialize(data,options)
 
-	catch err
-		throw err
+export def tokenize code, options = {}
+	let script = Compilation.new(code,options)
+	return script.tokenize()
 
 export def rewrite tokens, o = {}
-	try
-		console.time('rewrite') if o:profile
-		tokens = rewriter.rewrite tokens, o
-		console.timeEnd('rewrite') if o:profile
-	catch err
-		throw err
-	return tokens
-
+	rewriter.rewrite tokens, o
 
 export def parse code, o = {}
+	o = resolveConfig(o)
 	var tokens = code isa Array ? code : tokenize(code,o)
 	try
-		o.@source ||= code if tokens != code
-		o.@tokens = tokens
-		return parser.parse tokens
+		return parser.parse(tokens)
 	catch err
 		err:_code = code
-		err:_filename = o:filename if o:filename
+		err:_sourcePath = o:sourcePath if o:sourcePath
 		throw err
 
 export def compile code, o = {}
-	try
-		# check if code is completely blank
-		unless /\S/.test(code)
-			return {
-				js: "",
-				toString: do this:js
-			}
-		var tokens = tokenize(code, o)
-		var ast = parse(tokens, o)
-		return ast.compile(o)
-	catch err
-		err:_code = code
-		err:_filename = o:filename if o:filename
-		if o:evaling
-			console.log "error compiling {o:filename}"
-			if err:excerpt
-				console.log "   " + err.excerpt(colors: true)
-			else
-				console.log "   " + err:message
-				console.log "   " + "in file {err:_filename}"
-				console.log err:stack if err:stack	
-			# console.log "error during compile",o:filename
-		elif !o:silent
-			console.log "error compiling {o:filename}"
+	let compilation = Compilation.new(code,resolveConfig(o))
+	return compilation.compile()
 
-		throw err
+
+export def resolve code, o = {}
+	let compilation = Compilation.new(code,resolveConfig(o))
+	return compilation.compile()
 
 export def analyze code, o = {}
 	var meta

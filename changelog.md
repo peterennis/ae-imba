@@ -1,3 +1,220 @@
+## 2.0.0-alpha.133
+* Improved sourcemapping
+* Improved support for type annotations
+* Fixed crash in bundler
+
+## 2.0.0-alpha.132
+* Improve windows compatibility for bundler and `imba create`
+
+## 2.0.0-alpha.131
+* Serve hashed (cacheable) assets with `Cache-Control: max-age=31536000`
+* Remove `?v=xxxxxx` suffix from asset references generated with `--no-hashing`
+* Allow `"external":["builtins",...]` to externalize builtin node modules for other platforms than `node`
+* Add `-H` alias for the `--no-hashing` option
+
+## 2.0.0-alpha.130
+* Upgraded esbuild to v0.9.2
+* Automatically polyfill built-in node modules like buffer,stream,crypto etc when compiling for browser. Still experimental.
+
+## 2.0.0-alpha.129
+* Prevent `touchstart` event on iPad Pro in `@touch.prevent`
+* Fixed text in svg `<text>` elements (#482)
+
+## 2.0.0-alpha.128
+* Fixed image asset urls in SSR
+* Make bundler work with client entrypoint without any styles
+* Dispatch bubbling `resized` event from ResizeObserver
+
+## 2.0.0-alpha.127
+* Overhauled `@touch` to work be more consistent on touch devices
+* Add `@touch.round` event modifier
+
+## 2.0.0-alpha.126
+* Prevent `touchstart` event on iOS in `@touch.prevent`
+
+## 2.0.0-alpha.125
+* Make custom events cancelable by default
+* Make `@-webkit-scrollbar-*` style selectors work
+* Make core event modifiers work for `@touch` event
+* Fix issue where text selection did not work after `@touch`
+* Make `@touch.prevent` prevent scrolling via `touch-action:none`
+* Add `@important` style modifier
+
+## 2.0.0-alpha.124
+* Update built-in colors to follow Tailwind 2.0
+* Allow interpolating colors in runtime `<div[c:{mycolor}]>`
+* Fix deep selector `>>>` with multiple nested children
+
+## 2.0.0-alpha.123
+* Fix router crashing when event-related runtime code is tree-shaken
+
+## 2.0.0-alpha.122
+* Fix issue with type inferencing tags in certain cases
+* Add `suspend`, `unsuspend` component lifecycle methods
+* Improved router interface & internals
+
+## 2.0.0-alpha.121
+* Added `imba.serve` to `index.d.ts` 
+* Fix serious regression in router causing crash
+
+## 2.0.0-alpha.120
+* Parse `fn await something` correctly
+* Improved router internals
+* Add internal `Node#attachToParent` and `Node#detachFromParent` methods
+* Preserve signed zero in output (Fixes #497)
+* Make hmr reloading work with raw html assets
+* Make `--no-hashing` cli option actually work
+* Build html entrypoints in correct dist folder
+* Add `imba create` command for creating project from template
+
+## 2.0.0-alpha.119
+* Add support for object spread syntax `{a:1, ...obj}`
+* Fix regression causing crash when generating css
+
+## 2.0.0-alpha.118
+* Only call imba.commit when events are actually handled
+
+## 2.0.0-alpha.117
+* Alias `tabindex` to `tabIndex` in tag attributes.
+* Fix scoping issue with css in tag trees
+* Add experimental router aliases/redirects support
+* Include preflight.css at root level of package
+
+
+## 2.0.0-alpha.116
+* Convert durations (`1s`, `150ms`, `60fps` etc) to ms-based numbers on compile-time
+
+## 2.0.0-alpha.115
+* Add `debounce` event modifier
+
+## 2.0.0-alpha.114
+* Add `no-minify` option to cli
+* Always compile `html` namespaced attributes to raw `setAttribute`
+
+## 2.0.0-alpha.113
+* Add `__realname` as an unaltered alias for `__filename`
+* Add support for selectors in tag tree - see [#490](https://github.com/imba/imba/issues/490)
+
+## 2.0.0-alpha.112
+* Show full version (including alpha number) in cli `imba --version`
+
+## 2.0.0-alpha.110
+* Add experimental `<tag autorender=interval>` inteface
+* Add `?v=hash` to asset urls when filename hashing is turned off
+* Add experimental support for `.html` entrypoints to `imba serve` and `imba build`
+* Add `abs` and `rel` shorthands for `position` style property
+* Fix memory leak when using `imba --watch`
+
+## 2.0.0-alpha.109
+* Support extending native tags `tag Purchase < form`
+* Allow defining global tags without dash in name
+
+## 2.0.0-alpha.108
+* Fix issue with `@nth-of-type`, `@nth-child` selectors
+* Improve internals of intersect event handling
+
+## 2.0.0-alpha.107
+* Add `asset.body` property for accessing raw content of assets
+
+## 2.0.0-alpha.106
+* Allow passing `rootMargin` options to intersect event
+* Fix issue in router related to hash links
+
+## 2.0.0-alpha.105
+* Fix issue with css property order
+
+## 2.0.0-alpha.102
+* changelog and docs coming soon. see imba.io
+
+## 2.0.0-alpha.60
+* Add `route-to.exact` modifier to router
+
+## 2.0.0-alpha.59
+* Add support for numeric separator `100_000`
+* Fix multiline regex parsing issues
+
+## 2.0.0-alpha.58
+* Allow setting innerHTML in SSR
+
+## 2.0.0-alpha.57
+* Update instantiation syntax in tests++
+
+## 2.0.0-alpha.56
+* Add `new Foo` instantiation syntax
+* Deprecate `Foo.new` instantiation syntax
+
+## 2.0.0-alpha.55
+* Allow local/exportable tags (uppercased tag declarations)
+* Allow interpolated tags inside strings in tag trees
+
+## 2.0.0-alpha.54
+* Allow getters and setters in object literals
+
+## 2.0.0-alpha.53
+* Allow media breakpoints in style selectors
+* Added max-width breakpoints
+
+## 2.0.0-alpha.52
+* Fix issue with nested `$reference` selectors
+* Allow router to work for regular links
+* Add route-to.replace modifier
+* Add route-to.sticky modifier
+
+## 2.0.0-alpha.51
+* No longer inheriting from CustomEvent as it is not supported in Safari
+* Fix input data binding issue
+* Added `before` and `after` style property modifiers
+* Added `prefix` as alias for `before.content`
+* Added `suffix` as alias for `after.content`
+
+## 2.0.0-alpha.50
+* Fix nested selector bug
+* Fix focus-within modifier
+* Add `:local` pseudo-class for only styling local children of component
+* Support `$reference` in selectors for targeting local referenced elements
+* Change `display` style property to accept multiple layout aliases
+* Add 1-digit color aliases (blue900 -> blue9 etc)
+
+## 2.0.0-alpha.49
+* Allow border and border-(top|right|bottom|left) to accept a single color value
+* Accept rgb/hsl/hex colors in text and border properties
+
+## 2.0.0-alpha.48
+* Added multi-purpose `text` style property for describing font-family, font-size, font-style, font-weight, text-decoration, text-transform, line-height, letter-spacing and color in a single property
+* Added shorthand style aliases for border-* and flex-*
+
+## 2.0.0-alpha.47
+* Added x, y, z, rotate, scale, scale-x, scale-y, skew-x, skew-y custom style properties
+* Extended transition property to accept colors, styles, sizes as properties and custom easings
+
+## 2.0.0-alpha.46
+* Added experimental syntax for css/styling. See [#334](https://github.com/imba/imba/pull/362)
+* Broke scoped css comment blocks until further notice
+
+## 2.0.0-alpha.45
+* Fix conditional rendering bug (#334)
+* Changed event syntax from `<div :click.stop.{method()}>` to `<div @click.stop=method()>`
+* Allow comments inside multiline tags
+* Include left/right event key modifiers
+* Improve resize and intersect events
+* Always bind data when using `<tag[my-data]>` syntax
+
+## 2.0.0-alpha.44
+* Improved lifecycle methods for components
+* Fix sourcemapping for env-flags
+
+## 2.0.0-alpha.43
+* Add syntax for element references `<div$reference>`
+* Fix problem with missing ResizeObserver in safari
+
+## 2.0.0-alpha.42
+* Fixed webpack imba/loader issues with scoped css
+* Add event wrapper for ResizeObserver
+* Add experimental router code
+* Add basic support for setting dom classes outside of templates
+* Allow calling imba.mount with a function
+* Rename #context api to $context
+* Rename parentContext to $parent
 
 ## 2.0.0-alpha.40
 * Introduce decorators with `@decorator` syntax. See [#334](https://github.com/imba/imba/pull/334)

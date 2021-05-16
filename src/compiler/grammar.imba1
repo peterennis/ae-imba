@@ -92,11 +92,9 @@ var grammar =
 	Terminator: [
 		o 'TERMINATOR' do Terminator.new(A1)
 	]
-	
-	TypeAnnotation: [
-		o 'TYPE IDENTIFIER' do TypeAnnotation.new([A2])
-		o 'TYPE IDENTIFIER INDEX_START INDEX_END' do TypeAnnotation.new([A2,A3,A4])
-		
+
+	Type: [
+		o 'TYPE' do TypeAnnotation.new(A1)
 	]
 
 	# An indented block of expressions. Note that the [Rewriter](rewriter.html)
@@ -110,14 +108,17 @@ var grammar =
 		o 'INDENT TERMINATOR Body OUTDENT' do A3.prebreak(A2).indented(A1,A4)
 	]
 
+	
+
 	# Block and statements, which make up a line in a body.
 	Line: [
-		o 'VarBlock'
-		# o 'Splat'
+		o 'CSSDeclaration'
 		o 'Expression'
+		o 'VarDecl' do A1.option('block',yes) # VarDeclaration.new(A2,null,A1)
 		# o 'HEADER' do Terminator.new(A1)
 		o 'Comment'
 		o 'Statement'
+		
 		o 'ImportDeclaration'
 		o 'ExportDeclaration'
 	]
@@ -148,14 +149,19 @@ var grammar =
 		o 'EXPORT EXPORT_ALL AS Identifier FROM String' do
 			ExportAllDeclaration.new(A1,[ExportAllSpecifier.new(A2,A4)],A6)
 		o 'EXPORT Exportable' do Export.new(A2).set(keyword: A1)
-		o 'EXPORT DEFAULT Exportable' do Export.new(A3).set(keyword: A1,default: A2)
-		o 'EXPORT_VAR VarBlock' do Export.new(A2).set(keyword: A1)
+		o 'EXPORT DEFAULT DefaultExportable' do Export.new(A3).set(keyword: A1,default: A2)
 	]
 
 	Exportable: [
 		o 'MethodDeclaration'
 		o 'Class'
-		o 'Tag'
+		o 'CSSDeclaration'
+		o 'TagDeclaration'
+		o 'VarAssign'
+	]
+
+	DefaultExportable: [
+		o 'Expression'
 	]
 
 	ImportOrExport: [
@@ -172,12 +178,16 @@ var grammar =
 			ImportDeclaration.new(A1,null, A2)
 		o 'IMPORT ImportDefaultSpecifier FROM String' do
 			ImportDeclaration.new(A1,[A2], A4)
+		o 'IMPORT TYPEIMPORT ImportDefaultSpecifier FROM String' do
+			ImportTypeDeclaration.new(A1,[A3], A5)
 		o 'IMPORT ImportNamespaceSpecifier FROM String' do
 			ImportDeclaration.new(A1,[A2], A4)
 		o 'IMPORT { } FROM String' do
 			ImportDeclaration.new(A1,null, A5)
 		o 'IMPORT { ImportSpecifierList } FROM String' do
 			ImportDeclaration.new(A1,[A3], A6)
+		o 'IMPORT TYPEIMPORT { ImportSpecifierList } FROM String' do
+			ImportTypeDeclaration.new(A1,[A4], A7)
 		o 'IMPORT ImportDefaultSpecifier IMPORT_COMMA ImportNamespaceSpecifier FROM String' do
 			ImportDeclaration.new(A1,[A2,A4], A6)
 		o 'IMPORT ImportDefaultSpecifier IMPORT_COMMA { ImportSpecifierList } FROM String' do
@@ -204,6 +214,7 @@ var grammar =
 	ImportSpecifier: [
 		o 'Identifier' do ImportSpecifier.new(A1)
 		o 'DecoratorIdentifier' do ImportSpecifier.new(A1)
+		o 'MixinIdentifier' do ImportSpecifier.new(A1)
 		o 'Identifier AS Identifier' do ImportSpecifier.new(A1, A3)
 		o 'DEFAULT' do ImportSpecifier.new(Literal.new(A1))
 		o 'DEFAULT AS Identifier' do ImportSpecifier.new(Literal.new(A1), A3)
@@ -240,28 +251,34 @@ var grammar =
 		o 'Tag'
 	]
 
-	Private: [
-		o '# IDENTIFIER' do Private.new(A2) # IdentifierExpression.new(A2).set(prefix: '__', private: yes)
-		o 'Private {{ Expression }}' do A1.add(A3)
+	ExpressionBlock: [
+		o 'Expression'
+		o 'INDENT ExpressionBlock Outdent' do A2.indented(A1,A3)
 	]
 
 	# A literal identifier, a variable name or property.
 	Identifier: [
-		o 'IDENTIFIER' do Identifier.new A1
+		# o 'IDENTIFIER Type' do Identifier.new(A1).set(datatype: A2)
+		o 'IDENTIFIER' do Identifier.new(A1)
 	]
+
+	SymbolIdentifier: [
+		o 'SYMBOLID' do SymbolIdentifier.new A1
+	]
+	
 	
 	DecoratorIdentifier: [
 		o 'DECORATOR' do DecoratorIdentifier.new A1
+	]
+	
+	MixinIdentifier: [
+		o 'MIXIN' do MixinIdentifier.new A1
 	]
 
 	Key: [
 		o 'KEY' do Identifier.new A1
 	]
 
-	# A literal identifier, a variable name or property.
-	Ivar: [
-		o '@ IDENTIFIER' do Ivar.new(A2).set(self: Self.new(A1))
-	]
 
 	Argvar: [
 		o 'ARGVAR' do Argvar.new A1
@@ -286,6 +303,7 @@ var grammar =
 	# Alphanumerics are separated from the other **Literal** matchers because
 	# they can also serve as keys in object literals.
 	AlphaNumeric: [
+		o 'NUMBER UNIT' do NumWithUnit.new(A1,A2)
 		o 'NUMBER' do Num.new A1
 		o 'STRING' do Str.new A1
 		o 'Symbol'
@@ -349,18 +367,113 @@ var grammar =
 		o 'TagIdentifier' do ExpressionNode.new(A1)
 		o '' do TagTypeIdentifier.new('div')
 	]
+	
+	StyleBlockDeclaration: [
+		o 'CSS CSS_SEL StyleBody CSS_END' do StyleRuleSet.new(A2,A3)
+	]
+	
+	CSSDeclaration: [
+		# o 'GLOBAL CSS CSS_SEL StyleBody CSS_END' do StyleRuleSet.new(A3,A4).set(global: A1)
+		o 'StyleBlockDeclaration' do A1.set(toplevel: true)
+		o 'GLOBAL CSSDeclaration' do A2.set(global: A1)
+		o 'LOCAL CSSDeclaration' do A2.set(local: A1)
+	]
+	
+	
+	StyleBlockBody: [
+		o 'INDENT StyleBody Outdent' do A2.indented(A1,A3)
+	]
+	
+	OptStyleBody: [
+		o '' do StyleBody.new([])
+		o 'StyleBody'
+	]
+	
+	StyleBody: [
+		o 'StyleNode' do StyleBody.new([A1])
+		o 'StyleBody StyleDeclaration' do A1.add A2
+		# o 'Style2Body , Style2Node' do A1.add A3
+		o 'StyleBody Terminator StyleNode' do A1.add(A3)
+		o 'INDENT StyleBody Outdent' do A2.indented(A1,A3)
+	]
+	
+	StyleNode: [
+		o 'StyleDeclaration'
+		o 'CSS_SEL StyleBlockBody CSS_END' do StyleRuleSet.new(A1,A2)
+	]
+	
+	StyleDeclaration: [
+		o 'StyleProperty : StyleExpressions' do StyleDeclaration.new(A1,A3)
+	]
+	
+	StyleProperty: [
+		o 'CSSPROP' do StyleProperty.new([A1])
+	]
+	
+	StyleOperator: [
+		o 'MATH'
+		o '+'
+		o '-'
+	]
+	
+	StyleExpressions: [
+		o 'StyleExpression' do StyleExpressions.new([A1])
+		o 'StyleExpressions , StyleExpression' do A1.add(A3)
+	]
+	
+	# the values
+	StyleExpression: [
+		o 'StyleTerm' do StyleExpression.new().add(A1)
+		o 'StyleExpression StyleOperator' do A1.add(A2)
+		o 'StyleExpression StyleTerm' do A1.add(A2)
+		o 'StyleExpression / StyleTerm' do A1.addParam(A3,A2)
+	]
+	
+	StyleOperation: [
+		o 'StyleTerm / StyleTerm' do A1.addParam(A3,A2)
+	]
+	
+	StyleTermPlaceholder: [
+		o '{ Expression }' do StyleInterpolationExpression.new(A2)
+		o 'StyleTermPlaceholder CSSUNIT' do A1.set(unit: A2)
+	]
+	
+	StyleTerm: [
+		o 'CSSVAR' do StyleVar.new(A1)
+		o 'DIMENSION' do StyleDimension.new(A1)
+		o 'COLOR' do StyleColor.new(A1)
+		o 'PERCENTAGE' do StyleDimension.new(A1)
+		o 'NUMBER' do StyleNumber.new(A1)
+		o 'String' do A1
+		o 'StyleTermPlaceholder' do A1
+		# o '{ Expression }' do StyleInterpolationExpression.new(A2)
+		o 'CSSURL' do StyleURL.new(A1)
+		o 'CSSIDENTIFIER ( StyleExpressions )' do StyleFunction.new(A1,A3)
+		o 'CSSIDENTIFIER' do StyleIdentifier.new(A1)
+		o 'COMPARE StyleTerm' do A2.set(op: A1)
+		# o '> StyleTerm' do A2.set(op:A1)
+		
+	]
 
 	TagOptions: [
+		o 'TagTypeName TAG_REF' do Tag.new(type: A1,reference: A2)
 		o 'TagTypeName' do Tag.new(type: A1)
 		o 'TagOptions INDEX_START ArgList INDEX_END' do A1.addPart(A3,AST.TagData)
 		o 'TagOptions TAG_ID' do A1.addPart(A2,AST.TagId)
+		o 'TagOptions TAG_SYMBOL_ID' do A1.addPart(IdentifierExpression.new(A2.cloneSlice(1)),AST.TagId)
+		o 'TagOptions SYMBOL_ID' do A1.addPart(IdentifierExpression.new(A2.cloneSlice(1)),AST.TagId)
 		o 'TagOptions TAG_FLAG' do A1.addPart(A2,AST.TagFlag)
 		o 'TagOptions TAG_ATTR' do A1.addPart(A2,AST.TagAttr)
 		o 'TagOptions TAG_ON' do A1.addPart(A2,AST.TagHandler)
-
+		o 'TagOptions STYLE_START STYLE_END' do A1 
+		o 'TagOptions STYLE_START StyleBody STYLE_END' do A1.addPart(StyleRuleSet.new(null,A3),AST.TagFlag)
+		o 'TagOptions T. STYLE_START StyleBody STYLE_END' do A1.addPart(StyleRuleSet.new(null,A4),AST.TagFlag)
+		o 'TagOptions MIXIN' do A1.addPart(MixinIdentifier.new(A2),AST.TagFlag)
 		o 'TagOptions T: TagIdentifier' do A1.addPart(A3,AST.TagHandler)
+		o 'TagOptions T@ TagIdentifier' do A1.addPart(A3,AST.TagHandler)
 		o 'TagOptions T. @ TAG_LITERAL' do A1.addPart(A4.prepend('_'),AST.TagFlag)
 		o 'TagOptions T. TagIdentifier' do A1.addPart(A3,AST.TagFlag)
+		
 		o 'TagOptions # TagIdentifier' do A1.addPart(A3,AST.TagId)
 		o 'TagOptions TAG_WS TagIdentifier' do A1.addPart(A2,AST.TagSep).addPart(A3,AST.TagAttr)
 
@@ -370,7 +483,8 @@ var grammar =
 		o 'TagOptions CALL_START ArgList CALL_END' do A1.addPart(A3,AST.TagArgList)
 		o 'TagOptions [ ArgList ]' do A1.addPart(A3,AST.TagData)
 		o 'TagOptions TAG_WS' do A1.addPart(A2,AST.TagSep)
-		o 'TagOptions Ivar' do A1.set(ivar: A2)
+		o 'TagOptions Comment' do A1
+		o 'TagOptions TERMINATOR' do A1
 		# o 'TagOptions TagFlag' do A1.addPart(A2)
 		o 'TagOptions = TagAttrValue' do A1.addPart(A3,AST.TagAttrValue,A2)
 	]
@@ -393,10 +507,29 @@ var grammar =
 	]
 
 	TagBody: [
-		o 'INDENT OUTDENT' do ArgList.new([]).indented(A1,A2)
-		o 'INDENT ArgList OUTDENT' do A2.indented(A1,A3)
-		o 'CALL_START ArgList CALL_END' do A2
-		o 'Tag' do ArgList.new([A1])
+		o 'INDENT OUTDENT' do TagBody.new([]).indented(A1,A2)
+		o 'INDENT TagBodyList OUTDENT' do A2.indented(A1,A3)
+		o 'CALL_START TagBodyList CALL_END' do A2
+		o 'Tag' do TagBody.new([A1])
+	]
+	
+	TagBodyList: [
+		o 'TagBodyItem' do TagBody.new([]).add(A1)
+		o 'TagBodyList , TagBodyItem' do A1.add A3
+		o 'TagBodyList OptComma Terminator TagBodyItem' do A1.add(A3).add(A4)
+		o 'TagBodyList OptComma TERMINATOR SEPARATOR Terminator TagBodyItem' do A1.add(A5).add(A6)
+		o 'INDENT TagBodyList OptComma Outdent' do A2.indented(A1,A4)
+		o 'TagBodyList OptComma INDENT TagBodyList OptComma Outdent' do A1.concat A4
+	]
+
+	# Valid arguments are Blocks or Splats.
+	TagBodyItem: [
+		o 'Expression'
+		o '... Expression' do Splat.new(A2).set(keyword: A1)
+		o 'Splat'
+		o 'LOGIC'
+		o 'Comment'
+		o 'StyleBlockDeclaration' do A1.set(inTagTree: yes)
 	]
 	
 	# Class definitions have optional bodies of prototype property assignments,
@@ -428,22 +561,20 @@ var grammar =
 
 	
 	TagId: [
-		o 'TAGID' do TagIdRef.new(A1)
+		o '# IDENTIFIER' do TagIdRef.new(A2)
 	]
-
-	
 
 	# Assignment of a variable, property, or index to a value.
 	Assign: [
+		o 'VarAssign'
 		o 'Assignable = Expression' do Assign.new A2, A1, A3
-		o 'Assignable TypeAnnotation = Expression' do Assign.new(A3, A1, A4).set(datatype: A2)
 		o 'Assignable = INDENT Expression Outdent' do Assign.new A2, A1, A4.indented(A3,A5)
-		o 'Assignable TypeAnnotation = INDENT Expression Outdent' do Assign.new(A3, A1, A5).indented(A4,A6).set(datatype: A2)
 	]
 
 	# Assignment when it happens within an object literal. The difference from
 	# the ordinary **Assign** is that these allow numbers and strings as keys.
 	AssignObj: [
+		o '... SimpleObjAssignable' do ObjRestAttr.new(A2).set(spread: A1)
 		o 'MethodDeclaration' do A1.set(inObject: yes)
 		o 'ObjAssignable' do ObjAttr.new(A1)
 		o 'ObjAssignable : Expression' do ObjAttr.new(A1, A3)
@@ -455,9 +586,9 @@ var grammar =
 
 	SimpleObjAssignable: [
 		o 'Identifier'
+		o 'Identifier Type' do A1.set(datatype: A2)
+		o 'SymbolIdentifier'
 		o 'Key'
-		o 'Ivar'
-		o 'Private'
 	]
 
 	ObjAssignable: [
@@ -467,11 +598,6 @@ var grammar =
 		o '( Expression )' do A2
 		o 'AlphaNumeric'
 	]
-	# wip
-	ObjRestValue: [
-		o '... SimpleObjAssignable' do Splat.new(A2).set(keyword: A1)
-	]
-	
 
 	# A block comment.
 	Comment: [
@@ -525,6 +651,7 @@ var grammar =
 	MethodIdentifier: [
 		o 'Identifier'
 		o 'DecoratorIdentifier'
+		o 'SymbolIdentifier' do A1 # InterpolatedIdentifier.new(A1)
 		o '[ Expression ]' do InterpolatedIdentifier.new(A2)
 	]
 
@@ -546,12 +673,26 @@ var grammar =
 		o ''
 		o ','
 	]
+	
+	OptSemicolon: [
+		o ''
+		o ';'
+	]
 
 	# The list of parameters that a function accepts can be of any length.
 	ParamList: [
 		o '' do []
 		o 'Param' do [A1]
 		o 'ParamList , Param' do A1.concat A3
+	]
+	
+	ParamExpression: [
+		o 'Value'
+		o 'Code'
+		o 'Operation'
+		o 'Assign'
+		o 'Ternary'
+		o 'Tag'
 	]
 
 	ParamValue: [
@@ -577,13 +718,14 @@ var grammar =
 		o 'ParamVar = ParamValue' do Param.new(A1.value,A3).set(datatype: A1.option(:datatype))
 		o 'Object = ParamValue' do Param.new(A1,A3)
 		o 'Array = ParamValue' do Param.new(A1,A3)
-		# OptionalParam.new A1, A3, A2
+		o '...' do RestParam.new(A1)
 	]
 
 	# Function Parameters
 	ParamVar: [
 		o 'Identifier' do Param.new(A1)
-		o 'Identifier TypeAnnotation' do Param.new(A1).set(datatype: A2)
+		o 'Identifier Type' do Param.new(A1).set(datatype: A2)
+		# o 'Identifier TypeAnnotation' do Param.new(A1).set(datatype: A2)
 		# o 'SPLAT ParamVar' do Splat.new(A2).set(keyword: A1)
 	]
 
@@ -591,63 +733,48 @@ var grammar =
 	Splat: [
 		o 'SPLAT Expression' do AST.SPLAT(A2)
 	]
-	
+
 	VarKeyword: [
 		o 'VAR'
 		o 'LET'
 		o 'CONST'
 	]
 
-	InlineVarKeyword: [
-		o 'INLINE_VAR'
-		o 'INLINE_LET'
-		o 'INLINE_CONST'
-	]
-
 	VarAssignable: [
 		o 'Identifier'
-		o 'Identifier TypeAnnotation' do A1.set(datatype: A2)
+		o 'Identifier Type' do A1.set(datatype: A2)
 		o 'Array' # all kinds?
 		o 'Object' # not supported anymore
-	]
-	
-	InlineVarAssignable: [
-		o 'Identifier'
-		o 'Array' # all kinds?
-		o 'Object' # not supported anymore
+		# o 'VarAssignable Type' do A1.set(datatype: A2)
 	]
 
-	VarBlockAssign: [
-		o 'VarAssignable' do [A1]
-		o 'VarAssignable = Expression' do [A1,A3]
-		o 'VarAssignable = INDENT Expression Outdent' do [A1,A4.indented(A3,A5)]
+	VarDecl: [
+		o 'VarKeyword VarAssignable' do VarReference.new(A2,A1)
 	]
 
-	VarBlock: [
-		o 'VarKeyword VarBlockAssign' do VarDeclList.new([]).set(keyword: A1,type: A1.value).add(A2)
-		o 'VarBlock , VarBlockAssign' do A1.add(A3)
-	]
-
-	InlineVar: [
-		o 'InlineVarKeyword InlineVarAssignable' do VarReference.new(A2,A1)
+	VarAssign: [
+		o 'VarDecl = Expression' do Assign.new A2, A1, A3
+		o 'VarDecl = INDENT Expression Outdent' do Assign.new A2, A1, A4.indented(A3,A5)
 	]
 
 
 	# Variables and properties that can be assigned to.
 	SimpleAssignable: [
 		o 'ENV_FLAG' do EnvFlag.new(A1)
-		# o 'PrivateField'
-		o 'Ivar' do IvarAccess.new('.',A1.option(:self),A1) # .setStartLoc(A1.startLoc)
-		o 'Private' do Access.new('.',null,A1)
 		o 'Argvar'
 		o 'Self' # not sure if self should be assignable really
 		o 'Identifier' do VarOrAccess.new(A1) # LocalIdentifier.new(A1)
-			
+		o 'SymbolIdentifier' do Access.new('.',null,A1) # LocalIdentifier.new(A1)
+		o 'Access'
 		# FIXME this isn really assignable?
-		o 'Value . NEW' do New.new(A1).set(keyword: A3)
+		# o 'Value . NEW' do LegacyNew.new(A1).set(keyword: A3)
 		# o 'Value . Super' do SuperAccess.new('.',A1,A3)
+		o 'SimpleAssignable Type' do A1.set(datatype: A2)
+	]
 
-		o 'Value SoakableOp Identifier' do PropertyAccess.new(A2,A1,A3) # TODO change to regular access
+	Access: [
+		o 'Value SoakableOp Identifier' do AST.OP(A2,A1,A3) # PropertyAccess.new(A2,A1,A3) # TODO change to regular access
+		o 'Value SoakableOp SymbolIdentifier' do IndexAccess.new(A2,A1,A3) # AST.OP(A2,A1,A3) # PropertyAccess.new(A2,A1,A3) # TODO change to regular access
 		o 'Value INDEX_START IndexValue INDEX_END' do IndexAccess.new('.',A1,A3)
 	]
 
@@ -663,7 +790,6 @@ var grammar =
 	# Everything that can be assigned to.
 	Assignable: [
 		o 'SimpleAssignable'
-		o 'InlineVar'
 		o 'Array' #  do A1
 		o 'Object' # not supported anymore
 	]
@@ -687,7 +813,13 @@ var grammar =
 		o 'Invocation'
 		o 'Require'
 		o 'Value BANG' do BangCall.new(A1).set(keyword: A2)
+		# o 'Value Type' do A1.set(datatype: A2)
 	]
+
+	# TypedValue: [
+	#	o 'Value'
+	#	o 'Value Type' do A1.set(datatype: A2)
+	# ]
 
 	IndexValue: [
 		o 'Expression' do Index.new A1
@@ -718,8 +850,6 @@ var grammar =
 
 	# Class definitions have optional bodies of prototype property assignments,
 	# and optional references to the superclass.
-
-
 	# might as well handle this in the lexer instead
 	Class: [
 		o 'ClassStart' do A1
@@ -729,17 +859,33 @@ var grammar =
 	]
 
 	ClassStart: [
-		o 'CLASS SimpleAssignable' do ClassDeclaration.new(A2, null, []).set(keyword: A1)
-		o 'CLASS SimpleAssignable ClassBody' do ClassDeclaration.new(A2, null, A3).set(keyword: A1)
+		# o 'CLASS ClassName ClassConstructorParams ClassBody' do ClassDeclaration.new(A2, null, A4).set(keyword: A1,params: A3)
+		# o 'CLASS ClassName ClassConstructorParams' do ClassDeclaration.new(A2, null, []).set(keyword: A1,params: A3)
+		o 'CLASS ClassName ClassBody' do ClassDeclaration.new(A2, null, A3).set(keyword: A1)
+		o 'CLASS ClassName' do ClassDeclaration.new(A2, null, []).set(keyword: A1)
 		o 'CLASS ClassBody' do ClassDeclaration.new(null, null, A2).set(keyword: A1)
-		o 'CLASS SimpleAssignable COMPARE Expression' do ClassDeclaration.new(A2, A4, []).set(keyword: A1)
-		o 'CLASS SimpleAssignable COMPARE Expression ClassBody' do ClassDeclaration.new(A2, A4, A5).set(keyword: A1)
+		# o 'CLASS ClassName ClassConstructorParams COMPARE Expression ClassBody' do ClassDeclaration.new(A2, A5, A6).set(keyword: A1, params: A3)
+		# o 'CLASS ClassName ClassConstructorParams COMPARE Expression' do ClassDeclaration.new(A2, A6, []).set(keyword: A1, params: A3)
+		o 'CLASS ClassName COMPARE Expression' do ClassDeclaration.new(A2, A4, []).set(keyword: A1)
+		o 'CLASS ClassName COMPARE Expression ClassBody' do ClassDeclaration.new(A2, A4, A5).set(keyword: A1)
 		o 'CLASS COMPARE Expression ClassBody' do ClassDeclaration.new(null, A3, A4).set(keyword: A1)
 	]
 
-	ClassIdentifier: [
-		o '' do null
-		o 'SimpleAssignable'
+
+
+	ClassName: [
+		# o '' do null
+		# o 'SYMBOLID'
+		# o 'Identifier' # do ClassIdentifier.new(A1)
+		# o 'Self' # not sure if self should be assignable really
+		# o 'Identifier' do VarOrAccess.new(A1) # LocalIdentifier.new(A1)
+		# o 'SymbolIdentifier' do Access.new('.',null,A1) # LocalIdentifier.new(A1)
+		o 'Identifier' do VarOrAccess.new(A1) # do ClassName.new(A1)
+		o 'SymbolIdentifier' do Access.new('.',null,A1) # IndexAccess.new(A2,A1,A3) # AST.OP(A2,A1,A3)
+		o 'ClassName . Identifier' do AST.OP(A2,A1,A3)
+		o 'ClassName . SymbolIdentifier' do IndexAccess.new(A2,A1,A3) # AST.OP(A2,A1,A3)
+		# ClassName.new(A3,A1) # AST.OP(A2,A1,A3)
+		# o 'Value . SymbolIdentifier' do IndexAccess.new(A2,A1,A3)
 	]
 
 	ClassBody: [
@@ -758,6 +904,7 @@ var grammar =
 		o 'Decorators'
 		o 'ClassDeclLine'
 		o 'Decorators ClassDeclLine' do A1.concat([A2])
+		o 'CSSDeclaration'
 		o 'Comment'
 		o 'Tag'
 	]
@@ -765,16 +912,38 @@ var grammar =
 	ClassDeclLine: [
 		o 'STATIC ClassDeclLine' do A2.set(static: A1)
 		o 'MethodDeclaration'
-		o 'ClassField = Expression' do A1.set(value: A3) # ClassField.new(A1, A3)
-		o 'ClassField' do A1
+		o 'ClassFieldDeclaration'
 		# o 'ClassFieldIdentifier ClassFieldBody' do ClassField.new(A1, null,A2)
 		# o 'ClassFieldIdentifier INDENT ClassFieldBody OUTDENT' do ClassField.new(A1, null,A3)
 	]
 
+	ClassFieldDeclaration: [
+		o 'ClassField ClassFieldOp Expression' do A1.set(value: A3,op: A2) # ClassField.new(A1, A3)
+		o 'ClassField' do A1
+		o 'ClassFieldDeclaration @ WatchBody' do A1.set(watch: A3)
+		o 'ClassFieldDeclaration DECORATOR WatchBody' do A1.set(watch: A3)
+	]
+
+	ClassFieldDecoration: [
+		o 'ClassFieldDeclaration @ WatchBody' do A1.set(watch: A3)
+	]
+
+	WatchBody: [
+		o 'Block'
+		o 'Expression'
+	]
+
+	ClassFieldOp: [
+		'='
+		'COMPOUND_ASSIGN'
+	]
+
 	ClassField: [
+		o 'Identifier' do ClassField.new(A1)
+		o 'SymbolIdentifier' do ClassField.new(A1)
 		o 'PROP Identifier' do ClassField.new(A2).set(keyword: A1)
 		o 'ATTR Identifier' do ClassAttribute.new(A2).set(keyword: A1)
-		o 'ClassField TypeAnnotation' do A1.set(datatype: A2)
+		o 'ClassField Type' do A1.set(datatype: A2)
 	]
 	
 	ClassFieldBody: [
@@ -812,6 +981,7 @@ var grammar =
 	Array: [
 		o '[ ]' do Arr.new(ArgList.new([])).setEnds(A1,A2)
 		o '[ ArgList OptComma ]' do Arr.new(A2).setEnds(A1,A2)
+		o 'Array Type' do A1.set(datatype: A2)
 	]
 
 	# Inclusive and exclusive range dots.
@@ -847,7 +1017,7 @@ var grammar =
 		o 'Expression'
 		o '... Expression' do Splat.new(A2).set(keyword: A1)
 		o 'Splat'
-		o 'LOGIC'
+		o 'DO_PLACEHOLDER' do DoPlaceholder.new(A1)
 		o 'Comment'
 	]
 
@@ -874,6 +1044,7 @@ var grammar =
 	# A catch clause names its error and runs a block of code.
 	Catch: [
 		o 'CATCH CATCH_VAR Block' do Catch.new(A3,A2)
+		o 'CATCH Block' do Catch.new(A2,null)
 		# o 'CATCH CATCH_VAR Expression' do Catch.new(A3,A2)
 	]
 
@@ -888,6 +1059,8 @@ var grammar =
 	# the trick.
 	Parenthetical: [
 		o '( ExpressionList )' do Parens.new(A2,A1,A3)
+		o '( ExpressionList ) UNIT' do ExpressionWithUnit.new(Parens.new(A2,A1,A3),A4)
+		o 'Parenthetical Type' do A1.set(datatype: A2)
 		# o '( INDENT ExpressionList OUTDENT )' do Parens.new(A3,A1,A5)
 	]
 
@@ -947,6 +1120,7 @@ var grammar =
 	# This enables support for pattern matching.
 	ForValue: [
 		o 'Identifier'
+		o 'Identifier Type' do A1.set(datatype: A2)
 		o 'Array' # do ValueNode.new A1
 		o 'Object' # do ValueNode.new A1
 	]
@@ -957,6 +1131,7 @@ var grammar =
 	ForVariables: [
 		o 'ForValue' do [A1]
 		o 'ForValue , ForValue' do [A1, A3]
+		o 'ForValue , ForValue , ForValue' do [A1, A3, A5]
 	]
 
 	# The source of a comprehension is an array or object with an optional guard
@@ -1024,8 +1199,11 @@ var grammar =
 	# -type rule, but in order to make the precedence binding possible, separate
 	# rules are necessary.
 	Operation: [
+		o 'NEW Expression' do Instantiation.new(A2).set(keyword: A1)
 		o 'UNARY Expression' do AST.OP A1, A2
 		o 'SQRT Expression' do AST.OP A1, A2
+		o '--- Expression' do AST.OP A1, A2
+		o '+++ Expression' do AST.OP A1, A2
 		o('-     Expression', &, prec: 'UNARY') do AST.OP(A1,A2) # Op.new '-', A2
 		o('+     Expression', &, prec: 'UNARY') do AST.OP(A1,A2) # do Op.new '+', A2
 		o '-- SimpleAssignable' do UnaryOp.new(A1, null, A2)
@@ -1042,6 +1220,8 @@ var grammar =
 		o 'Expression COMPARE  Expression' do AST.OP A2, A1, A3
 		o 'Expression LOGIC    Expression' do AST.OP A2, A1, A3
 		# o 'Expression ?.    Expression' do AST.OP A2, A1, A3
+		
+		# o 'Expression UNIT' do AST.OP A2, A1
 
 		o 'Expression NOT RELATION Expression' do
 			AST.OP(A3, A1, A4).invert(A2)
@@ -1049,8 +1229,8 @@ var grammar =
 		o 'Expression RELATION Expression' do
 			AST.OP A2, A1, A3
 
-		o 'SimpleAssignable COMPOUND_ASSIGN Expression' do AST.OP_COMPOUND(A2.@value,A2,A1,A3)
-		o 'SimpleAssignable COMPOUND_ASSIGN INDENT Expression Outdent' do AST.OP_COMPOUND(A2.@value, A1, A4.indented(A3,A5))
+		o 'SimpleAssignable COMPOUND_ASSIGN Expression' do AST.OP(A2,A1,A3)
+		o 'SimpleAssignable COMPOUND_ASSIGN INDENT Expression Outdent' do AST.OP(A2,A1,A4.indented(A3,A5))
 	]
 
 
@@ -1058,16 +1238,16 @@ var grammar =
 # ----------
 
 var operators = [
-	['left',      '.', '?.', '?:', '::','.:']
+	['left',      '.', '?.', '::','.:']
 	['left',      'CALL_START', 'CALL_END']
 	# ['left',      '{{', '}}']
 	# ['left', 'STRING_START','STRING_END']
 	['nonassoc',  '++', '--']
-	['right',     'UNARY','THROW','SQRT','NOT']
+	['right',     'UNARY','NEW','THROW','SQRT','NOT']
 	['right','AWAIT']
 	['right',     'EXP']
 	['left',      'MATH']
-	['left',      '+', '-']
+	['left',      '+', '-','+++','---']
 	['left',      'SHIFT']
 	['left',      'RELATION']
 	['left',      'COMPARE']
@@ -1078,12 +1258,13 @@ var operators = [
 	['right',     '=', ':', 'COMPOUND_ASSIGN', 'RETURN', 'THROW', 'EXTENDS']
 	['right',     'FORIN', 'FOROF', 'BY', 'WHEN']
 	['right',     'TAG_END']
-	['right',     'IF', 'ELSE', 'FOR', 'DO', 'WHILE', 'UNTIL', 'LOOP', 'SUPER', 'CLASS', 'MODULE', 'TAG', 'EVENT', 'TRIGGER', 'TAG_END', 'IMPORT', 'EXPORT']
+	['right',     'IF', 'ELSE', 'FOR', 'DO', 'WHILE', 'UNTIL', 'LOOP', 'SUPER','CLASS', 'MODULE', 'TAG', 'EVENT', 'TRIGGER', 'TAG_END', 'IMPORT', 'EXPORT']
 	['right',     'POST_IF','POST_FOR']
 	['right', 'NEW_TAG']
 	['right', 'TAG_ATTR_SET']
 	['right', 'SPLAT']
 	['left', 'SELECTOR_START']
+	['left', 'CSS']
 ]
 
 # Wrapping Up

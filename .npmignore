@@ -5,15 +5,12 @@ plugins
 tmp
 .gitignore
 .github
+.imba-cache
 webpack.config.js
 *.tgz
 *.log
 attic/*
-build/
-vendor/
-scripts/
 test/
-src/compiler
 .cache
 .travis.yml
 screenshot.png

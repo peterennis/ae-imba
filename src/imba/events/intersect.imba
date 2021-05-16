@@ -1,40 +1,85 @@
-const observers = {}
+# imba$imbaPath=global
 
-class IntersectEvent < CustomEvent
-	def in$mod state
-		let detail = state.event.detail
-		let ratio = detail.intersectionRatio
-		let last = state.handler.lastRatio
-		state.handler.lastRatio = ratio
-		return !last or last < ratio
+import {Event,CustomEvent,Element,Document} from '../dom/core'
 
-	def out$mod state
-		let detail = state.event.detail
-		let ratio = detail.intersectionRatio
-		let last = state.handler.lastRatio
-		state.handler.lastRatio = ratio
-		return !ratio or last > ratio
+export def use_events_intersect
+	yes
 
-def callback name
-	return do |entries|
+const observers = new (global.WeakMap || Map)
+export const IntersectionEventDefaults = {threshold: [0]}
+const viewport = {}
+const defaults = IntersectionEventDefaults
+
+def Event.intersect$handle
+	let obs = event.detail.observer
+	return modifiers._observer == obs
+
+def Event.intersect$in
+	return event.delta >= 0 and event.entry.isIntersecting
+
+def Event.intersect$out
+	return event.delta < 0
+
+def Event.intersect$css
+	element.style.setProperty("--ratio",event.ratio)
+	return true
+
+def callback name, key
+	return do(entries,observer)
+		let map = observer.prevRatios ||= new WeakMap
+		
 		for entry in entries
-			let e = IntersectEvent.new(name, bubbles: false, detail: entry)
+			let prev = map.get(entry.target) or 0
+			let ratio = entry.intersectionRatio
+			let detail = {entry: entry, ratio: ratio, from: prev, delta: (ratio - prev), observer: observer }
+			let e = new CustomEvent(name, bubbles: false, detail: detail)
+			e.entry = entry
+			e.isIntersecting = entry.isIntersecting
+			e.delta = detail.delta
+			e.ratio = detail.ratio
+			map.set(entry.target,ratio)
 			entry.target.dispatchEvent(e)
+		return
 
-def getIntersectionObserver
-	observers.intersect ||= IntersectionObserver.new(
-		callback('intersect'),
-		{threshold: [0,1]}
-	)
+def getIntersectionObserver opts = IntersectionEventDefaults
+	let key = opts.threshold.join('-') + opts.rootMargin
+	if !opts.root and IntersectionEventDefaults.root
+		opts.root ||= IntersectionEventDefaults.root
+	let target = opts.root or viewport
+	let map = observers.get(target)
+	map || observers.set(target,map = {})
+	map[key] ||= new IntersectionObserver(callback('intersect',key),opts)
 
-Element.prototype.on$intersect = do |mods,context|
-	let obs
-	if mods.options
-		let opts = Object.assign({event: 'intersect'},mods.options[0])
-		if opts.root isa String
-			opts.root = document.querySelector(opts.root)
-		let ev = delete opts.event
-		obs = mods.options.obs = IntersectionObserver.new(callback(ev),opts)
-	else
-		obs = getIntersectionObserver(mods)
-	obs.observe(this)
+extend class Element
+	def on$intersect mods,context,handler,o
+		let obs
+		if mods.options
+			let th = [] 
+			let opts = {threshold:th}
+
+			for arg in mods.options
+				if arg isa Element or arg isa Document
+					opts.root = arg
+				elif typeof arg == 'number'
+					th.push(arg)
+				elif typeof arg == 'string'
+					opts.rootMargin = arg
+				elif typeof arg == 'object'
+					Object.assign(opts,arg)
+					
+			if th.length == 1
+				let num = th[0]
+				if num > 1
+					th[0] = 0
+					while th.length < num
+						th.push(th.length / (num - 1))
+
+			th.push(0) if th.length == 0
+			obs = getIntersectionObserver(opts)
+		else
+			obs = getIntersectionObserver()
+
+		mods._observer = obs
+		obs.observe(this)
+		self.addEventListener('intersect',handler,o)
+		return handler

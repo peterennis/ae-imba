@@ -1,6 +1,6 @@
-var puppy = window.puppy
+const puppy = window.puppy
 
-var pup = do(ns,...params)
+const pup = do(ns,...params)
 	if ns.match(/^spec/) and puppy
 		puppy(ns,params)
 		return
@@ -23,7 +23,7 @@ class PupMouse
 	def type text, options
 		puppy('keyboard.type',[text,options])
 
-var TERMINAL_COLOR_CODES =
+const TERMINAL_COLOR_CODES =
 	bold: 1
 	underline: 4
 	reverse: 7
@@ -36,15 +36,15 @@ var TERMINAL_COLOR_CODES =
 	cyan: 36
 	white: 37
 
-var fmt = do(code,string)
+const fmt = do(code,string)
 	return string.toString! if console.group
 	code = TERMINAL_COLOR_CODES[code]
-	var resetStr = "\x1B[0m"
-	var resetRegex = /\x1B\[0m/g
-	var codeRegex = /\x1B\[\d+m/g
-	var tagRegex = /(<\w+>|<A\d+>)|(<\/\w+>|<A\d+>)/i
-	var numRegex = /\d+/
-	var str = ('' + string).replace(resetRegex, "{resetStr}\x1B[{code}m") # allow nesting
+	let resetStr = "\x1B[0m"
+	let resetRegex = /\x1B\[0m/g
+	let codeRegex = /\x1B\[\d+m/g
+	let tagRegex = /(<\w+>|<A\d+>)|(<\/\w+>|<A\d+>)/i
+	let numRegex = /\d+/
+	let str = ('' + string).replace(resetRegex, "{resetStr}\x1B[{code}m") # allow nesting
 	str = "\x1B[{code}m{str}{resetStr}"
 	return str
 
@@ -64,10 +64,10 @@ class SpecComponent
 global class Spec < SpecComponent
 	
 	get keyboard
-		_keyboard ||= PupKeyboard.new
+		_keyboard ||= new PupKeyboard
 
 	get mouse
-		_mouse ||= PupMouse.new
+		_mouse ||= new PupMouse
 	
 	def click sel, trusted = yes
 		if puppy and trusted
@@ -88,7 +88,7 @@ global class Spec < SpecComponent
 		observer.takeRecords!
 
 	def wait time = 100
-		Promise.new(do(resolve) setTimeout(resolve,time))
+		new Promise(do(resolve) setTimeout(resolve,time))
 
 	def constructor
 		super()
@@ -100,7 +100,7 @@ global class Spec < SpecComponent
 		warnings = []
 		state = {info: [], mutations: [], log: []}
 
-		observer = MutationObserver.new do(muts)
+		observer = new MutationObserver do(muts)
 			context.state.mutations.push(...muts)
 
 		self
@@ -110,14 +110,14 @@ global class Spec < SpecComponent
 
 	def eval block, ctx
 		stack.push(context = ctx)
-		var res = block(context.state)
-		var after = do
+		let res = block(context.state)
+		let after = do
 			stack.pop!
 			context = stack[stack.length - 1]
 			observer.takeRecords!
 			self
 
-		var err = do(e)
+		let err = do(e)
 			ctx.error = e
 			after!
 
@@ -128,27 +128,28 @@ global class Spec < SpecComponent
 			return Promise.resolve(self)
 
 	def describe name, blk
-		blocks.push SpecGroup.new(name, blk, self)
+		blocks.push new SpecGroup(name, blk, self)
 	
 	def test name, blk
 		if name isa Function
 			blk = name
 			name = context.blocks.length + 1
-		context.blocks.push SpecExample.new(name, blk, context)
+		context.blocks.push new SpecExample(name, blk, context)
 
 	def eq actual, expected, options
-		SpecAssert.new(context, actual,expected, options)
+		new SpecAssert(context, actual,expected, options)
 	
 	def step i = 0, &blk
 		Spec.CURRENT = self
-		var block = blocks[i]
+		let block = blocks[i]
 		return self.finish! unless block
 		imba.once(block,'done') do self.step(i+1)
 		block.run!
 
 	def run
-		Promise.new do(resolve,reject)
-			var prevInfo = console.info
+		new Promise do(resolve,reject)
+			pup("spec:start",{})
+			let prevInfo = console.info
 			observer.observe(document.body,{
 				attributes: true,
 				childList: true,
@@ -168,13 +169,13 @@ global class Spec < SpecComponent
 			self.step(0)
 
 	def finish
-		var ok = []
-		var failed = []
+		let ok = []
+		let failed = []
 
 		for test in tests
 			test.failed ? failed.push(test) : ok.push(test)
 		
-		var logs = [
+		let logs = [
 			fmt('green',"{ok.length} OK")
 			fmt('red',"{failed.length} FAILED")
 			"{tests.length} TOTAL"
@@ -182,7 +183,7 @@ global class Spec < SpecComponent
 
 		console.log logs.join(" | ")
 
-		var exitCode = (failed.length == 0 ? 0 : 1)
+		let exitCode = (failed.length == 0 ? 0 : 1)
 		emit('done', [exitCode])
 		pup("spec:done",{
 			failed: failed.length,
@@ -204,14 +205,14 @@ global class SpecGroup < SpecComponent
 		"{parent.fullName}{name} > "
 
 	def describe name, blk
-		blocks.push SpecGroup.new(name, blk, self)
+		blocks.push new SpecGroup(name, blk, self)
 	
 	def test name, blk
-		blocks.push SpecExample.new(name, blk, self)
+		blocks.push new SpecExample(name, blk, self)
 
 	def run i = 0
 		start! if i == 0
-		var block = blocks[i]
+		let block = blocks[i]
 		return finish! unless block
 		imba.once(block,'done') do run(i+1)
 		block.run! # this is where we wan to await?
@@ -248,8 +249,8 @@ global class SpecExample < SpecComponent
 		start!
 		# does a block really need to run here?
 		try
-			var promise = (block ? SPEC.eval(block, self) : Promise.resolve({}))
-			var res = await promise
+			let promise = (block ? SPEC.eval(block, self) : Promise.resolve({}))
+			let res = await promise
 		catch e
 			console.log "error from run!",e
 			error = e
@@ -324,7 +325,7 @@ global class SpecAssert < SpecComponent
 		self
 
 	def toString
-		if failed and message isa String
+		if failed and typeof message == 'string'
 			let str = message
 			str = str.replace('%1',actual)
 			str = str.replace('%2',expected)
@@ -332,12 +333,41 @@ global class SpecAssert < SpecComponent
 		else
 			"failed"
 
-window.spec = SPEC = Spec.new
+window.spec = global.SPEC = new Spec
 
 # global def p do console.log(*arguments)
 global def describe name, blk do SPEC.context.describe(name,blk)
 global def test name, blk do SPEC.test(name,blk)
 global def eq actual, expected, o do  SPEC.eq(actual, expected, o)
 global def ok actual, o do SPEC.eq(!!actual, true, o)
+	
+global def eqcss el, match,sel
+	if typeof el == 'string'
+		el = document.querySelector(el)
+	elif el isa Element and !el.parentNode
+		document.body.appendChild(el)
+	if typeof sel == 'string'
+		el = el.querySelector(sel)	
+	elif typeof sel == 'number'
+		el = el.children[sel]
 
+	let style = window.getComputedStyle(el)
 
+	if typeof match == 'number'
+		match = {fontWeight: String(match)}
+
+	for own k,expected of match
+		let real = style[k]
+		if expected isa RegExp
+			global.ok real.match(expected)
+			unless real.match(expected)
+				console.log real,'did no match',expected
+		else
+			global.eq(real,expected)
+	return
+
+window.onerror = do(e)
+	console.log('page:error',{message: (e.message or e)})
+
+window.onunhandledrejection = do(e)
+	console.log('page:error',{message: e.reason.message})

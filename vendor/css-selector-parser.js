@@ -224,11 +224,11 @@ function ParseContext(str, pos, pseudos, attrEqualityMods, ruleNestingOperators,
     }
     return result;
   };
-  getIdent = function() {
+  getIdent = function(specials) {
     var result = '';
     chr = str.charAt(pos);
     while (pos < l) {
-      if (isIdent(chr)) {
+      if (isIdent(chr) || (specials && specials[chr])) {
         result += chr;
       } else if (chr === '\\') {
         pos++;
@@ -324,16 +324,24 @@ function ParseContext(str, pos, pseudos, attrEqualityMods, ruleNestingOperators,
       }
       if (ruleNestingOperators[chr]) {
         var op = chr;
-        if(op == '>' && str.charAt(pos) == '>' && str.charAt(pos + 1) == '>'){
+        if(op == '>' && str.charAt(pos + 1) == '>' && str.charAt(pos + 2) == '>'){
           op = '>>>';
           pos = pos + 3;
+        } else if(op == '>' && str.charAt(pos + 1) == '>'){
+          op = '>>';
+          pos = pos + 2;
         } else {
           pos++;
         }
         skipWhitespace();
         rule = this.parseRule();
+
         if (!rule) {
-          throw Error('Rule expected after "' + op + '".');
+          if(op == '>' || op == '>>>' || op == '>>'){
+            rule = {tagName: '*'}
+          } else {
+            throw Error('Rule expected after "' + op + '".');  
+          }
         }
         rule.nestingOperator = op;
       } else {
@@ -355,6 +363,10 @@ function ParseContext(str, pos, pseudos, attrEqualityMods, ruleNestingOperators,
         (rule = rule || {}).tagName = '*';
       } else if (isIdentStart(chr) || chr === '\\') {
         (rule = rule || {}).tagName = getIdent();
+      } else if (chr === '$' || chr === '%') {
+        pos++;
+        rule = rule || {};
+        (rule.classNames = rule.classNames || []).push(chr + getIdent());
       } else if (chr === '.') {
         pos++;
         rule = rule || {};
@@ -420,10 +432,13 @@ function ParseContext(str, pos, pseudos, attrEqualityMods, ruleNestingOperators,
         }
         rule = rule || {};
         (rule.attrs = rule.attrs || []).push(attr);
-      } else if (chr === ':') {
+      } else if (chr === ':' || chr === '@') {
+        let special = chr === '@';
+        
         pos++;
-        var pseudoName = getIdent();
+        var pseudoName = getIdent({'~':true,'+':true,'.':true,'>':true,'<':true,'!':true});
         var pseudo = {
+          special: special,
           name: pseudoName
         };
         if (chr === '(') {
@@ -579,8 +594,16 @@ CssSelectorParser.prototype._renderEntity = function(entity) {
       }
       if (entity.classNames) {
         res += entity.classNames.map(function(cn) {
-          return "." + (this.escapeIdentifier(cn));
+          if(cn[0] == '!') {
+            return ":not(." + this.escapeIdentifier(cn.slice(1)) + ")";
+          } else {
+            return "." + (this.escapeIdentifier(cn));
+          }
         }, this).join('');
+      }
+      if(entity.pri > 0){
+        let i = entity.pri;
+        while(--i >= 0) res += ':not(#_)';
       }
       if (entity.attrs) {
         res += entity.attrs.map(function(attr) {
@@ -597,18 +620,23 @@ CssSelectorParser.prototype._renderEntity = function(entity) {
       }
       if (entity.pseudos) {
         res += entity.pseudos.map(function(pseudo) {
+          let pre = ":" + this.escapeIdentifier(pseudo.name);
           if (pseudo.valueType) {
             if (pseudo.valueType === 'selector') {
-              return ":" + this.escapeIdentifier(pseudo.name) + "(" + this._renderEntity(pseudo.value) + ")";
+              return pre + "(" + this._renderEntity(pseudo.value) + ")";
             } else if (pseudo.valueType === 'substitute') {
-              return ":" + this.escapeIdentifier(pseudo.name) + "($" + pseudo.value + ")";
+              return pre + "($" + pseudo.value + ")";
             } else if (pseudo.valueType === 'numeric') {
-              return ":" + this.escapeIdentifier(pseudo.name) + "(" + pseudo.value + ")";
+              return pre + "(" + pseudo.value + ")";
+            } else if (pseudo.valueType === 'raw' || pseudo.valueType === 'string' ) {
+              return pre + "(" + pseudo.value + ")";
             } else {
-              return ":" + this.escapeIdentifier(pseudo.name) + "(" + this.escapeIdentifier(pseudo.value) + ")";
+              return pre + "(" + this.escapeIdentifier(pseudo.value) + ")";
             }
+          } else if(pseudo.type == 'el') {
+            return ':' + pre;
           } else {
-            return ":" + this.escapeIdentifier(pseudo.name);
+            return pre;
           }
         }, this).join('');
       }
@@ -621,8 +649,11 @@ CssSelectorParser.prototype._renderEntity = function(entity) {
 
 var parser = new CssSelectorParser();
 parser.registerSelectorPseudos('has','not','is','matches','any')
-parser.registerNestingOperators('>>>','>', '+', '~')
+parser.registerNumericPseudos('nth-child')
+parser.registerNestingOperators('>>>','>>','>', '+', '~')
 parser.registerAttrEqualityMods('^', '$', '*', '~')
-parser.enableSubstitutes()
+// parser.enableSubstitutes()
 
-module.exports = parser;
+export const parse = function(v){ return parser.parse(v) }
+export const render = function(v){ return parser.render(v) }
+// exports.default = parser;

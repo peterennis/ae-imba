@@ -18,8 +18,10 @@ def @log target,key,desc
 			return prev.apply(this,arguments)
 		return
 		
+
+
+		
 class Item
-	
 	
 	@log('hello') @bench
 	def setup
@@ -34,5 +36,5 @@ class Item
 		return sum
 		
 test 'multiple' do
-	let item = Item.new
+	let item = new Item
 	item.setup!

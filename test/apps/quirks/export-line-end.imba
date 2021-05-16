@@ -1,11 +1,11 @@
 
 export def createLiveFragment bitflags, options
-	var el = imba.document.createDocumentFragment()
+	var el = document.createDocumentFragment()
 	el.setup$(bitflags, options)
 	return el
 
 export def createFragment bitflags, parent
 	if bitflags & $TAG_INDEXED$
-		return IndexedTagFragment.new(bitflags,parent)
+		return new IndexedTagFragment(bitflags,parent)
 	else
-		return KeyedTagFragment.new(bitflags,parent)
+		return new KeyedTagFragment(bitflags,parent)

@@ -29,10 +29,8 @@ var arrayToHash = do |ary|
 		hash[item] = 1
 	return hash
 
-# var EXPRESSION_START = ['(','[','{','INDENT','CALL_START','PARAM_START','INDEX_START','BLOCK_PARAM_START','STRING_START','{{', 'TAG_START']
-# var EXPRESSION_END   = [')',']','}','OUTDENT','CALL_END','PARAM_END','INDEX_END','BLOCK_PARAM_END','STRING_END','}}', 'TAG_END']
 # Tokens that indicate the close of a clause of an expression.
-var EXPRESSION_CLOSE = [')',']','}','OUTDENT','CALL_END','PARAM_END','INDEX_END','BLOCK_PARAM_END','STRING_END','}}', 'TAG_END','CATCH', 'WHEN', 'ELSE', 'FINALLY']
+var EXPRESSION_CLOSE = [')',']','}','STYLE_END','OUTDENT','CALL_END','PARAM_END','INDEX_END','BLOCK_PARAM_END','STRING_END','}}', 'TAG_END','CATCH', 'WHEN', 'ELSE', 'FINALLY']
 
 var EXPRESSION_CLOSE_HASH = arrayToHash(EXPRESSION_CLOSE)
 
@@ -61,6 +59,9 @@ var EXPRESSION_END =
 	'BLOCK_PARAM_END': 1,
 	'STRING_END': 1,
 	'TAG_END': 1
+	
+var NO_IMPLICIT_PARENS = ['STYLE_START']
+var NO_IMPLICIT_BRACES = ['STYLE_START']
 
 var SINGLE_LINERS =
 	ELSE: 1
@@ -82,15 +83,14 @@ var SINGLE_CLOSERS_MAP =
 
 var IMPLICIT_FUNC_MAP =
 	'IDENTIFIER': 1
+	'SYMBOLID': 1
 	'SUPER': 1
-	'@': 1
 	'THIS': 1
 	'SELF': 1
 	'TAG_END': 1
 	'IVAR': 1
 	'CVAR': 1
 	'ARGVAR': 1
-	'NEW': 1
 	'BREAK': 1
 	'CONTINUE': 1
 	'RETURN': 1
@@ -101,6 +101,7 @@ var IMPLICIT_FUNC_MAP =
 var IMPLICIT_CALL_MAP =
 	'SELECTOR': 1
 	'IDENTIFIER': 1
+	'SYMBOLID': 1
 	'NUMBER': 1
 	'STRING': 1
 	'SYMBOL': 1
@@ -109,6 +110,7 @@ var IMPLICIT_CALL_MAP =
 	'NEW': 1
 	'CLASS': 1
 	'IF': 1
+	'AWAIT': 1
 	'UNLESS': 1
 	'TRY': 1
 	'SWITCH': 1
@@ -123,13 +125,13 @@ var IMPLICIT_CALL_MAP =
 	'IVAR': 1
 	'ARGVAR': 1
 	'SELF': 1
-	'@': 1
 	'[': 1
 	'(': 1
 	'{': 1
 	'--': 1
 	'++': 1
-	'TAGID': 1
+	'---': 1
+	'+++': 1
 	'#': 1
 	'TAG_START': 1
 	'PARAM_START': 1
@@ -142,25 +144,20 @@ var IMPLICIT_CALL_MAP =
 	'FOR': 1
 	'CONTINUE': 1
 	'BREAK': 1
-
+	'LET': 1
+	'VAR': 1
+	'CONST': 1
+	'CSS': 1
 
 var IDENTIFIERS = ['IDENTIFIER', 'IVAR', 'DECORATOR', 'ARGVAR']
 
 
 
 # Tokens that, if followed by an `IMPLICIT_CALL`, indicate a function invocation.
-var IMPLICIT_FUNC    = ['IDENTIFIER', 'SUPER', # ')', 'INDEX_END', #  'CALL_END',
+var IMPLICIT_FUNC    = ['IDENTIFIER', 'SYMBOLID', 'SUPER', # ')', 'INDEX_END', #  'CALL_END',
 	'@', 'THIS','SELF', 'EVENT','TRIGGER','TAG_END', 'IVAR', 'CVAR',
-	'ARGVAR', 'NEW', 'BREAK', 'CONTINUE','RETURN','BANG'
+	'ARGVAR', 'BREAK', 'CONTINUE','RETURN','BANG'
 ]
-
-# If preceded by an `IMPLICIT_FUNC`, indicates a function invocation.
-var IMPLICIT_CALL    = [
-	'SELECTOR','IDENTIFIER', 'NUMBER', 'STRING', 'SYMBOL', 'JS', 'REGEX', 'NEW', 'PARAM_START', 'CLASS',
-	'IF', 'UNLESS', 'TRY', 'SWITCH', 'THIS', 'BOOL', 'TRUE','FALSE', 'NULL', 'UNDEFINED', 'UNARY', 'SUPER', 'IVAR', 'ARGVAR','SELF', 
-	'@', '[', '(', '{', '--', '++','SELECTOR', 'TAG_START', 'TAGID', '#', 'SELECTOR_START', 'IDREF', 'SPLAT', 'DO', 'BLOCK_ARG',
-	'FOR', 'STRING_START','CONTINUE','BREAK'
-] # '->', '=>', why does it not work with symbol?
 
 var IMPLICIT_INDENT_CALL = [
 	'FOR'
@@ -185,7 +182,7 @@ var NO_IMPLICIT_BLOCK_CALL = [
 	'-=', '+=', '/=', '*=', '%=', '||=', '&&=', '?=', '<<=', '>>=', '>>>=', '&=', '^=', '|=', '**='
 ] # .concat(COMPOUND_ASSIGN)
 
-var NO_CALL_TAG = ['CLASS', 'IF','UNLESS','TAG','WHILE','FOR','UNTIL','CATCH','FINALLY','MODULE','LEADING_WHEN']
+var NO_CALL_TAG = ['CLASS', 'IF','UNLESS','TAG','WHILE','FOR','UNTIL','CATCH','FINALLY','MODULE','LEADING_WHEN','STRUCT']
 
 var NO_CALL_TAG_MAP = arrayToHash(NO_CALL_TAG)
 
@@ -248,6 +245,7 @@ export class Rewriter
 
 		@tokens  = tokens
 		@options = opts
+		@platform = opts:platform or opts:target
 
 		var i = 0
 		var k = tokens:length
@@ -268,7 +266,7 @@ export class Rewriter
 	def all
 		step("ensureFirstLine")
 		step("removeLeadingNewlines")
-		if @options:target == 'tsc'
+		if @platform == 'tsc'
 			step("addPlaceholderIdentifiers")
 
 		step("removeMidExpressionNewlines")
@@ -326,7 +324,7 @@ export class Rewriter
 	def ensureFirstLine
 		var token = @tokens[0]
 
-		if token.@type === TERMINATOR
+		if !token or token.@type === TERMINATOR
 			@tokens.unshift(T.token('BODYSTART','BODYSTART'))
 			# @tokens = [T.token('BODYSTART','BODYSTART')].concat(@tokens)
 		return
@@ -451,11 +449,30 @@ export class Rewriter
 			return [a,b]
 			
 		var indents = []
+		var balancedStack = []
 
 		# method is called so many times
 		scanTokens do |token,i,tokens|
 			var type = token.@type
 			var v = token.@value
+			
+			if type == 'CSS_SEL' and token.@closer
+				let idx = tokens.indexOf(token.@closer)
+				# console.log 'CSS jump to',i,idx,idx - i,tokens[idx - i]
+				return idx - i + 1
+			
+			if type == 'STYLE_START' and token.@closer
+				return tokens.indexOf(token.@closer) - i
+				
+			
+			if BALANCED_PAIRS[type]
+				balancedStack.unshift(type)
+			
+			elif INVERSES[type] and INVERSES[type] == balancedStack[0]
+				balancedStack.shift()
+
+			if NO_IMPLICIT_BRACES.indexOf(balancedStack[0]) >= 0
+				return 1
 
 			var ctx = stack:length ? stack[stack:length - 1] : baseCtx
 			var idx
@@ -484,8 +501,10 @@ export class Rewriter
 			if EXPRESSION_START[type]
 				if type === INDENT and noBraceContext.indexOf(ctx[0]) >= 0
 					stack.pop
+				
+				let tt = tokenType(i - 1)
 
-				if type === INDENT and tokenType(i - 1) == '{'
+				if type === INDENT and (tt == '{' or tt == 'STYLE_START')
 					stack.push stackToken('{', i) # should not autogenerate another?
 				else
 					stack.push stackToken(type, i)
@@ -526,7 +545,7 @@ export class Rewriter
 			
 
 			# found a type
-			let isDefInObject = (type == defType) and indents[0] not in ['CLASS','DEF','MODULE','TAG']
+			let isDefInObject = (type == defType) and indents[0] not in ['CLASS','DEF','MODULE','TAG','STRUCT']
 			# isDefInObject = isDefInObject and 
 			if (type == ':' or isDefInObject) and ctx[0] != '{' and ctx[0] != 'TERNARY' and (noBraceContext.indexOf(ctx[0]) == -1 or ctx[0] == defType)
 				# could just check if the end was right before this?
@@ -556,7 +575,7 @@ export class Rewriter
 				if !tprev or (tprev.@type not in ['INDENT','TERMINATOR'])
 					autoClose = yes
 					
-				if indents[0] and indents[0] in ['CLASS','DEF','MODULE','TAG']
+				if indents[0] and indents[0] in ['CLASS','DEF','MODULE','TAG','STRUCT']
 					autoClose = yes
 
 				if t0 and T.typ(t0) == '}' and t0:generated and ((t1.@type == ',' and !t1:generated) or !(t0:scope and t0:scope:autoClose)) #  and !autoClose
@@ -695,10 +714,27 @@ export class Rewriter
 			return no
 
 		var i = 0
+		let stack = []
+		let currPair = null
 
 		while tokens:length > (i + 1)
 			var token = tokens[i]
 			var type = token.@type
+			
+			if (type == 'STYLE_START' or type == 'CSS_SEL') and token.@closer
+				i = tokens.indexOf(token.@closer) + 1
+				continue
+			
+			if BALANCED_PAIRS[type]
+				stack.push(currPair = type)
+			
+			elif INVERSES[type] and INVERSES[type] == currPair
+				stack.pop()
+				currPair = stack[stack:length - 1]
+
+			if NO_IMPLICIT_PARENS.indexOf(currPair) >= 0
+				i++
+				continue
 
 			var prev    = i > 0 ? tokens[i - 1] : null
 			var next    = tokens[i + 1]
@@ -826,7 +862,8 @@ export class Rewriter
 		var action = do |token,i,tokens,s|
 			if token.@type != INDENT
 				if s:unfinished
-					tokens.splice i, 0, T.token('EMPTY_BLOCK', '')
+					let tok = T.token('EMPTY_BLOCK', '')
+					tokens.splice i, 0, tok
 					# T.setTyp(s:original, 'POST_' + s:original.@type)
 				else
 					T.setTyp(s:original, 'POST_' + s:original.@type)

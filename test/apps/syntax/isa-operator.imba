@@ -1,15 +1,15 @@
 class One
 
 test do
-	var str = 'string'
+	let str = 'string'
 	ok str isa String
 
 test do
-	var num = 123
+	let num = 123
 	ok num isa Number
 
 test do
-	var a = One.new
+	let a = new One
 	ok a isa One
 
 test do

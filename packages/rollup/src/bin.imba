@@ -18,7 +18,7 @@ var schema = {
 	schema: {
 		config: {type: 'string'},
 		output: {type: 'string'},
-		target: {type: 'string'},
+		platform: {type: 'string'},
 		format: {type: 'string'},
 	},
 	group: ['source-map']
@@ -53,6 +53,7 @@ import alias-plugin from '@rollup/plugin-alias'
 import json-plugin from '@rollup/plugin-json'
 import replace-plugin from '@rollup/plugin-replace'
 import serve-plugin from 'rollup-plugin-serve'
+import {terser} from 'rollup-plugin-terser'
 import hmr-plugin from 'rollup-plugin-livereload'
 
 def resolveImba basedir
@@ -86,32 +87,35 @@ var watch = options.watch
 var serve = options.serve
 var serving = no
 
-var imbac = require(path.resolve(lib.path,'dist','compiler.js'))
+var imbac = require(path.resolve(lib.path,'dist','compiler.cjs'))
 
-def imbaPlugin options
-	options = Object.assign({
+def imbaPlugin o
+	o = Object.assign({
 		sourceMap: {},
 		bare: true,
 		extensions: ['.imba', '.imba2'],
 		ENV_ROLLUP: true
-		# ,imbaPath: lib.path
-	}, options || {})
+	}, o || {})
 
-	var extensions = options.extensions
-	delete options.extensions
-	delete options.include
-	delete options.exclude
+	var extensions = o.extensions
+	delete o.extensions
+	delete o.include
+	delete o.exclude
 
 	return {
-		transform: do |code, id|
-			var opts = Object.assign({},options,{sourcePath: id, filename: id})
+		transform: do(code, id)
+			var opts = Object.assign({},o,{sourcePath: id})
+
+			opts.fs || Object.defineProperty(opts,'fs',{value: fs, enumerable:false})
+			opts.path || Object.defineProperty(opts,'path',{value: path, enumerable:false})
+
 			var output
 			return null if extensions.indexOf(path.extname(id)) === -1
 
 			try
 				output = imbac.compile(code, opts)
 			catch e
-				if options.target == 'web' and serve
+				if options.platform == 'browser' and serve
 					let msg = e.excerpt(colors: no)
 					let fn = printErrorInDocument.toString()
 					fn = fn.replace("ERROR_FILE",id)
@@ -126,7 +130,7 @@ def imbaPlugin options
 class Bundle
 	def constructor config
 		self.config = config
-		self.promise = Promise.new do |resolve,reject|
+		self.promise = new Promise do |resolve,reject|
 			self.resolver = resolve
 			self.rejector = reject
 		self
@@ -142,7 +146,7 @@ class Bundle
 		elif e.code == 'BUNDLE_END'
 			console.log "created {relPath(e.input)} → {relPath(e.output[0])} in {e.duration}ms"
 		elif e.code == 'ERROR'
-			let file = e.error && e.error.filename or e.error.id
+			let file = e.error && e.error.sourcePath or e.error.id
 			console.log "errored {file ? relPath(file) : ''}"
 			if e.error.excerpt
 				console.log e.error.excerpt(colors: yes)
@@ -173,13 +177,18 @@ for entry in cfg.entries
 		# imba: 
 	},cfg.alias or {},entry.alias or {})
 
-	let target = entry.target or 'web'
+	let platform = entry.platform or 'browser'
 	let plugins = (entry.plugins ||= [])
 	let resolver = resolve-plugin(extensions: ['.imba', '.mjs','.js','.cjs','.json'])
+
+	if entry.output && entry.output.compact
+		plugins.unshift(terser())
+
 	plugins.unshift(commonjs-plugin())
 	plugins.unshift(json-plugin())
 	plugins.unshift(resolver)
 	plugins.unshift(replace-plugin({'process.env.NODE_ENV': '"' + (process.env.NODE_ENV or 'production') + '"' }))
+	
 	
 	if Object.keys(alias).length
 		let parts = for own k,v of alias
@@ -192,9 +201,10 @@ for entry in cfg.entries
 		}
 		plugins.unshift(alias-plugin(o))
 	
-	plugins.unshift(imba-plugin(target: target))
+	let iopts = Object.assign({platform: platform},entry.options or {})
+	plugins.unshift(imba-plugin(iopts))
 
-	if options.serve and target == 'web' and !serving
+	if options.serve and platform == 'browser' and !serving
 		serving = true
 		let pubdir = path.dirname(entry.output.file)
 		let serve-config = Object.assign({
@@ -211,7 +221,7 @@ for entry in cfg.entries
 			}
 			plugins.push(hmr-plugin(hmr-config))
 
-	bundles.push(Bundle.new(entry))
+	bundles.push(new Bundle(entry))
 
 def run
 	var bundlers = await Promise.all(bundles.map(do $1.start() ))

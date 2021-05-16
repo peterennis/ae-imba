@@ -1,4 +1,4 @@
-var name = "Jo"
+let name = "Jo"
 
 tag app-root
 
@@ -7,13 +7,13 @@ tag app-root
 
 	def render
 		<self>
-			<input[name] type='text' :selection.{log(e.detail.start,e.detail.end)}>
+			<input bind=name type='text' @selection=log(e.detail.start,e.detail.end)>
 			<p> name
 
 imba.mount(<app-root>)
 
 test do
-	let el = $(input)
+	let el = document.querySelector('input')
 	await spec.tick()
 	eq el.value,name
 	el.focus()

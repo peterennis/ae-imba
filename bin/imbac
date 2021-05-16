@@ -3,7 +3,7 @@
 var path = require('path');
 var fs = require('fs');
 var package = require('../package.json');
-var compiler = require("../dist/compiler");
+var compiler = require("../compiler.imba.js");
 var helpers = compiler.helpers;
 
 function iter$(a){ return a ? (a.toArray ? a.toArray() : a) : []; };
@@ -24,8 +24,7 @@ var parseOpts = {
 		h: 'help',
 		s: 'stdio',
 		p: 'print',
-		m: 'sourceMap',
-		a: 'analyze',
+		m: 'sourcemap',
 		t: 'tokenize',
 		v: 'version',
 		w: 'watch',
@@ -34,22 +33,46 @@ var parseOpts = {
 	
 	schema: {
 		output: {type: 'string'},
-		target: {type: 'string'},
-		format: {type: 'string'},
+		sourcemap: {type: 'string'}, // inline | extern
+		platform: {type: 'string'}, // node | browser | worker
+		styles: {type: 'string'}, // extern | inline
+		imbaPath: {type: 'string'}, // global | inline | import
+		format: {type: 'string'}, // cjs | esm
+		hmr: null,
+		raw: null
 	},
 	
-	group: ['source-map']
+	groupz: ['sourcemap']
 };
 
+var help = `\n
+Usage: imbac [options] path/to/script.imba
 
-var help = "\nUsage: imbac [options] path/to/script.imba\n\n  -a, --analyze          print out the scopes and variables of your script\n      --es5              compile without native let/var/await\n  -h, --help             display this help message\n  -m, --source-map       generate source map and add inline to .js files\n      --inline-helpers   inline helpers to not depend on imba.js\n      --inline-css       inline css declared in sfc css blocks\n  -o, --output [dir]     set the output directory for compiled JavaScript\n  -p, --print            print out the compiled JavaScript\n  -s, --stdio            listen for and compile scripts over stdio\n  -t, --tokenize         print out the tokens that the lexer/rewriter produce\n      --target [target]  explicitly compile for node/web/webworker\n  -v, --version          display the version number\n      --silent			 only print out errors (skip warnings)\n  -w, --watch            recompile files on change\n      --wrap             compile with top-level function wrapper\n      --v2               compile with experimental features (Imba 2.0)";
-
+  -h, --help             display this help message
+  -v, --version          display the version number
+  -w, --watch            recompile files on change
+  -m, --sourcemap       generate source map and add inline to .js files
+  -o, --output [dir]     set the output directory for compiled JavaScript
+  -p, --print            print out the compiled JavaScript
+  -d, --debug            Enable compiler debugging
+  -s, --stdio            listen for and compile scripts over stdio
+  -t, --tokenize         print out the tokens that the lexer/rewriter produce
+  --platform [type]      Specify platform: 'node', 'browser', 'worker'
+  --format [type]        Specify format: 'esm' (default), 'cjs'
+  --styles [format]      Specify how styles should be added: 'extern', 'inline'
+  --silent               only print out errors (skip warnings)
+  --hmr                  compile for hot-module-reloading
+  --analyze          print out the scopes and variables of your script
+`;
 
 function CLI(options){
 	if(options === undefined) options = {};
 	this._options = options;
 	this._sources = [];
 	this._current = null;
+	if(!options.fs) Object.defineProperty(options,'fs',{value: fs, enumerable:false});
+	if(!options.path) Object.defineProperty(options,'path',{value: path, enumerable:false});
+	
 	this;
 };
 
@@ -152,7 +175,7 @@ CLI.prototype.cwd = function (){
 
 CLI.prototype.run = function (){
 	var self = this, o_, main_;
-	(o_ = self.o()).target || (o_.target = 'node');
+	(o_ = self.o()).platform || (o_.platform = 'node');
 	
 	if (self.o().output) {
 		self.o().output = path.normalize(path.resolve(self.cwd(),self.o().output));
@@ -170,7 +193,7 @@ CLI.prototype.run = function (){
 		stdin.setEncoding('utf8');
 		stdin.on('data',function(chunk) { return chunks.push(chunk); });
 		stdin.on('end',function() {
-			self.sources().push({filename: 'stdin',sourceBody: chunks.join()});
+			self.sources().push({sourcePath: 'stdin',sourceBody: chunks.join()});
 			return self.finish();
 		});
 	} else {
@@ -233,7 +256,7 @@ CLI.prototype.analyze = function (){
 	var self = this;
 	return self.traverse(function(src) {
 		var o2 = Object.create(self.o());
-		o2.filename = src.filename;
+		o2.sourcePath = src.sourcePath;
 		o2.entities = true;
 		var out = compiler.analyze(src.sourceBody,o2);
 		src.analysis = out;
@@ -246,9 +269,17 @@ CLI.prototype.tokenize = function (){
 	var self = this;
 	return self.traverse(function(src) {
 		var o2 = Object.create(self.o());
-		o2.filename = src.filename;
+		o2.sourcePath = src.sourcePath;
 		o2.rewrite = self.o().rewrite;
-		var out = compiler.tokenize(src.sourceBody,o2);
+		var out
+		try {
+			out = compiler.tokenize(src.sourceBody,o2);	
+		} catch(e){
+			console.log('error in tokenizer:',e.message);
+			throw e;
+			out = e._options.tokens;
+		}
+		
 		src.tokens = out;
 		
 		let res = [];
@@ -269,7 +300,7 @@ CLI.prototype.tokenize = function (){
 				s = self.b(("[" + typ + " " + id + "]"));
 			};
 			
-			if (t._loc != -1 && self.o().sourceMap) {
+			if (t._loc != -1 && self.o().sourcemap) {
 				s = ("(" + (t._loc) + ":" + (t._len) + ")") + s; // chalk.bold(s)
 			};
 			
@@ -289,12 +320,15 @@ CLI.prototype.compile = function (){
 CLI.prototype.compileFile = function (src){
 	var self = this;
 	var opts = Object.create(self.o());
-	opts.filename = src.filename;
+	// opts.filename = src.filename;
 	opts.sourcePath = src.sourcePath;
+	
+	if(opts.extlib) opts.imbaPath = null;
+	
 	var out = {};
 	var t = Date.now();
 	var at = new Date().toTimeString().substr(0,8);
-	var srcp = self.o().stdio ? src.filename : path.relative(process.cwd(),src.sourcePath);
+	var srcp = self.o().stdio ? src.sourcePath : path.relative(process.cwd(),src.sourcePath);
 	var dstp = src.targetPath && path.relative(process.cwd(),src.targetPath);
 	
 	var srcpAbs = path.resolve(srcp);
@@ -304,39 +338,41 @@ CLI.prototype.compileFile = function (src){
 		srcp = srcpAbs;
 		dstp = dstpAbs;
 	};
+
+	opts.sourcePath = srcpAbs;
 	
 	try {
-		if (src.filename.match(/\.imba1$/)) {
+		if (src.sourcePath.match(/\.imba1$/)) {
 			imbac1 || (imbac1 = require("../script/bootstrap.compiler.js"));
+			opts.filename = opts.sourcePath;
 			out = imbac1.compile(src.sourceBody,opts);
 		} else {
 			out = compiler.compile(src.sourceBody,opts);
-			if(opts.standalone){
+			if(opts.runtime == 'inline'){
 				out.js = fs.readFileSync(path.resolve(__dirname,'..','dist','imba.js'),'utf8') + '\n' + out.js;
 			}
 		};
 	} catch (e) {
-		out = {error: e};
+		console.log('error',e);
+		out = {errors: [e]};
 	};
-	
+
+	if(out.errors && out.errors.length){
+		// out = { error: out.errors[0].toError() }
+	}
+
 	out.compileTime = Date.now() - t;
 
-	let sourcemap = opts.sourceMap && out.sourcemap;
+	let sourcemap = opts.sourcemap && out.sourcemap;
 
 	if (sourcemap) {
-		if(opts.sourceMap.inline){
-			var base64 = new Buffer(JSON.stringify(sourcemap)).toString("base64");
-			out.js = out.js + "\n//# sourceMappingURL=data:application/json;base64," + base64;	
-		} else if (!opts.sourceMap.hidden){
+		// TODO this should clearly happen inside the compiler??
+		if(opts.sourcemap == 'inline'){
+			// var base64 = new Buffer(JSON.stringify(sourcemap)).toString("base64");
+			// out.js = out.js + "\n//# sourceMappingURL=data:application/json;base64," + base64;	
+		} else if (opts.sourcemap && opts.sourcemap != 'external'){
 			out.js = out.js + "\n//# sourceMappingURL=" + path.basename(src.targetPath + '.map');
 		}
-		
-
-		// if(opts.sourceMap.debug) {
-		// 	let str = JSON.stringify(sourcemap,null,2);
-		// 	// str = str.replace('')
-		// 	out.js = out.js + "\n/* " + str + "\n */";
-		// }
 	};
 	
 	src.output = out;
@@ -344,6 +380,7 @@ CLI.prototype.compileFile = function (src){
 	let status = ("" + self.gray(("" + at + " compile")) + " " + srcp + " " + self.gray("to") + " " + dstp + " " + self.green(out.compileTime + "ms"));
 	
 	if (out.error) {
+
 		status += self.red(" [1 error]");
 	};
 	
@@ -351,42 +388,58 @@ CLI.prototype.compileFile = function (src){
 		let count = out.warnings.length;
 		status += self.yellow((" [" + count + " warning" + ((count > 1) ? 's' : '') + "]"));
 	};
-	
-	if (src.targetPath && out.js !== undefined && !self.o().print) {
+
+	if (out.errors && out.errors.length) {
+		let count = out.errors.length;
+		status += self.red((" [" + count + " error" + ((count > 1) ? 's' : '') + "]"));
+		if (!self.o().print) {
+			self.log(status);
+			
+			out.errors.forEach(function(err,i){
+				if(err.toError instanceof Function){
+					err = err.toError();
+				}
+				// log "{gray("{at} compile")} {srcp} {gray("to")} {dstp} {red(out:compileTime + "ms")}"
+				if (err.excerpt) {
+					self.log("   " + err.excerpt({colors: self.o().colors}));
+				} else if(err instanceof SyntaxError && err.stack){
+					self.log(err.stack);
+				} else {
+					self.log("   " + err.message);
+					self.log("   " + ("in file " + srcp));
+					if (err.stack) { self.log(err.stack) };
+				};
+			})
+		};
+	}
+	else if (src.targetPath && out.js !== undefined && !self.o().print) {
 		self.ensureDir(src.targetPath);
 		fs.writeFileSync(src.targetPath,out.js,'utf8');
 		if (!self.o().print) { self.log(status) };
 
-		if(sourcemap && !opts.print && !opts.sourceMap.inline) { // And webpack
-			fs.writeFileSync(src.targetPath + '.map',JSON.stringify(sourcemap),'utf8');
+		if(sourcemap && !opts.print && opts.sourcemap != 'inline') { // And webpack
+			fs.writeFileSync(src.targetPath + '.map',JSON.stringify(sourcemap,null,2),'utf8');
 		}
-		
 		// log "{gray("{at} compile")} {srcp} {gray("to")} {dstp} {green(out:compileTime + "ms")}"
-	} else if (out.error) {
-		if (!self.o().print) {
-			self.log(status);
-			// log "{gray("{at} compile")} {srcp} {gray("to")} {dstp} {red(out:compileTime + "ms")}"
-			if (out.error.excerpt) {
-				self.log("   " + out.error.excerpt({colors: self.o().colors}));
-			} else {
-				self.log("   " + out.error.message);
-				self.log("   " + ("in file " + srcp));
-				if (out.error.stack) { self.log(out.error.stack) };
-			};
-		};
 	};
 	
 	if (out.warnings && !self.o().silent && !self.o().print) {
 		// log "   {out:warnings:length} warnings"
-		for (let i = 0, items = iter$(out.warnings), len = items.length, warn; i < len; i++) {
-			warn = items[i];
-			let hl = self.o().colors && 'whiteBright';
-			let excerpt = helpers.printExcerpt(src.sourceBody,warn.loc,{hl: hl,type: 'warn',pad: 1});
-			let msg = self.b(("" + self.yellow('warn: '))) + self.yellow(warn.message);
-			self.log("   " + msg);
-			self.log(self.gray(excerpt));
-		};
-		
+		out.warnings.forEach(function(err,i){
+			if(err.toError instanceof Function){
+				err = err.toError();
+			}
+			// log "{gray("{at} compile")} {srcp} {gray("to")} {dstp} {red(out:compileTime + "ms")}"
+			if (err.excerpt) {
+				self.log("   " + err.excerpt({colors: self.o().colors}));
+			} else if(err instanceof SyntaxError && err.stack){
+				self.log(err.stack);
+			} else {
+				self.log("   " + err.message);
+				self.log("   " + ("in file " + srcp));
+				if (err.stack) { self.log(err.stack) };
+			};
+		})
 		// helpers
 	};
 	

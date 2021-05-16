@@ -1,3 +1,4 @@
+# SKIP
 
 def @log target,key,desc
 	let prev = desc.value
@@ -16,7 +17,7 @@ def @debounce target,key,descriptor
 	const callback = descriptor.value
 
 	if typeof callback !== 'function'
-		throw SyntaxError.new('Only functions can be debounced')
+		throw new SyntaxError('Only functions can be debounced')
 
 	descriptor.value = do
 		const args = arguments
@@ -28,6 +29,12 @@ def @debounce target,key,descriptor
 	return descriptor
 
 def @track target,key,desc
+	unless desc
+		desc = {enumerable: true}
+		let map = this.weakmap = new WeakMap
+		def desc.get do map.get(this)
+		def desc.set value do map.set(this,value)
+
 	let getter = desc.get
 	let setter = desc.set
 	if getter isa Function
@@ -42,6 +49,11 @@ def @track target,key,desc
 	return desc
 
 def @watch target,key,desc
+	unless desc
+		desc = {enumerable: true}
+		let map = this.weakmap = new WeakMap
+		def desc.get do map.get(this)
+		def desc.set value do map.set(this,value)
 
 	let meth = this[0] or (key + 'DidSet')
 	let setter = desc.set
@@ -86,8 +98,9 @@ class Hello
 	def nameDidSet value,prev
 		console.info([prev,value])
 
-test do
-	let item = Hello.new
+let item = new Hello
+
+test do	
 	item.setup!
 	eq $1.log, ['call setup']
 
@@ -96,33 +109,34 @@ test do
 	eq $1.log, ['call setup']
 
 test do
-	let item = Hello.new
+	let item = new Hello
 	item.disable = 1
 	eq item.disable, 1
 	item.enable = 2
 	ok item.enable isa Function
 
+let i2 = new Hello
+
 test do
-	let item = Hello.new
-	item.debounced!
-	item.debounced!
-	item.debounced!
+	i2.debounced!
+	i2.debounced!
+	i2.debounced!
 	await spec.wait(20)
 	eq $1.log,['debounced']
 
+let i3 = new Hello
 
 test do
-	let item = Hello.new
-	item.number
-	item.number = 2
+	i3.number
+	i3.number = 2
 	eq $1.log,['get number','set number']
 
+let i4 = new Hello
 
 test do
-	let item = Hello.new
-	eq item.name, 'john'
-	item.name = 'john'
-	item.name = 'jane'
+	eq i4.name, 'john'
+	i4.name = 'john'
+	i4.name = 'jane'
 	eq $1.log,[['john','jane']]
 
 
@@ -133,10 +147,11 @@ class CustomWatch
 	def updated value,prev,key
 		console.info([prev,value,key])
 
-test do
-	let item = CustomWatch.new
-	eq item.name, 'john'
-	item.name = 'jane'
+let i5 = new CustomWatch
+
+test do	
+	eq i5.name, 'john'
+	i5.name = 'jane'
 	eq $1.log,[['john','jane','name']]
 
-console.log Object.keys(Hello.new)
+console.log Object.keys(new Hello)
